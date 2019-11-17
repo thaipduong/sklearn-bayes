@@ -393,21 +393,6 @@ def _logistic_cost_grad(X,Y,w,diagA):
     grad  = np.dot(X.T, s - Y) + wdA
     return [cost/n,grad/n]
 
-def _gaussian_cost_grad(X,Y,w,diagA):
-    '''
-        Calculates cost and gradient for logistic regression
-        '''
-    n = X.shape[0]
-    Xw = np.dot(X, w)
-    t = (Y-0.5)*2
-    s = norm.cdf(Xw)
-    cost = -(np.sum(np.log(s[Y==1]), 0) + \
-             np.sum(np.log(1-s[Y==0]), 0))
-    cost = cost + 0.5*(diagA*(w**2))
-
-    temp = norm.pdf(Xw*t)*t/norm.cdf(Xw*t)
-    grad = diagA*w - np.dot(X.T, temp)
-    return [cost / n, grad / n]
 
     
 
@@ -1054,15 +1039,12 @@ class RVC(ClassificationARD):
         self: object
            self
         '''
-        start = time.time()
         X,y = check_X_y(X,y, accept_sparse = None, dtype = np.float64)
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
                        self.kernel, self.kernel_params)
-        cur = time.time()
         # use fit method of ClassificationARD
         _ = super(RVC,self).fit(K,y)
-        cur = time.time()
         self.relevant_  = [np.where(active==True)[0] for active in self.active_]
         if X.ndim == 1:
             self.relevant_vectors_ = [ X[relevant_] for relevant_ in self.relevant_]
@@ -1105,45 +1087,6 @@ class RVC(ClassificationARD):
                 decision.append(self._decision_function_active(kernel(rv),cf,act,b))
         decision = np.asarray(decision).squeeze().T
         return decision
-
-
-    def get_feature(self, X):
-        '''
-        Computes distance to separating hyperplane between classes. The larger
-        is the absolute value of the decision function further data point is
-        from the decision boundary.
-
-        Parameters
-        ----------
-        X: array-like of size (n_samples_test,n_features)
-           Matrix of explanatory variables
-
-        Returns
-        -------
-        decision: numpy array of size (n_samples_test,)
-           Distance to decision boundary
-        '''
-        check_is_fitted(self, 'coef_')
-        X = check_array(X, accept_sparse=None, dtype=np.float64)
-        n_features = self.relevant_vectors_[0].shape[1]
-        if X.shape[1] != n_features:
-            raise ValueError("X has %d features per sample; expecting %d"
-                             % (X.shape[1], n_features))
-        kernel = lambda rvs: get_kernel(X, rvs, self.gamma, self.degree,
-                                        self.coef0, self.kernel, self.kernel_params)
-        decision = []
-        K = []
-        for rv, cf, act, b in zip(self.relevant_vectors_, self.coef_, self.active_,
-                                  self.intercept_):
-            # if there are no relevant vectors => use intercept only
-            if rv.shape[0] == 0:
-                decision.append(np.ones(X.shape[0]) * b)
-            else:
-                decision.append(self._decision_function_active(kernel(rv), cf, act, b))
-                K.append(kernel(rv))
-        decision = np.asarray(decision).squeeze().T
-        K = np.array(K[0])
-        return K
 
     def predict_proba(self,X):
         '''
