@@ -1,4 +1,4 @@
-## [THAI's FIXES] Test RVR and RVC with my bug fixes
+## [THAI] Test RVR and RVC with my bug fixes
     Run: python ./ipython_notebooks_tutorials/rvm_ard/rvm_demo.py
 
 
