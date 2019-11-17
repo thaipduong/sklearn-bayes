@@ -1,3 +1,8 @@
+## [THAI's FIXES] Test RVR and RVC with my bug fixes
+    Run: python ./ipython_notebooks_tutorials/rvm_ard/rvm_demo.py
+
+
+
 ##                        Python package for Bayesian Machine Learning with scikit-learn API
 [![Build Status](https://travis-ci.org/AmazaspShumik/sklearn-bayes.svg?branch=master)](https://travis-ci.org/AmazaspShumik/sklearn-bayes)
 [![Coverage Status](https://coveralls.io/repos/github/AmazaspShumik/sklearn-bayes/badge.svg)](https://coveralls.io/github/AmazaspShumik/sklearn-bayes)

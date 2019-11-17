@@ -11,9 +11,12 @@ from scipy.special import expit
 from scipy.optimize import fmin_l_bfgs_b
 from scipy.linalg import solve_triangular
 from scipy.stats import logistic
+from scipy.stats import norm
 from numpy.linalg import LinAlgError
+from scipy.stats import multivariate_normal
 import scipy.sparse
 import warnings
+import time
 
 #TODO: predict_proba for RVC with Laplace Approximation
 
@@ -63,6 +66,8 @@ def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias):
     converged = False
     if same_features and no_delta:
         converged = True
+        print "Converge!"
+        print sum(abs( Anew - Arec )), tol
         return [A,converged]
     
     # if not converged update precision parameter of weights and return
@@ -297,8 +302,9 @@ class RegressionARD(LinearModel,RegressorMixin):
                     Variance of predictive distribution
         '''
         y_hat     = self._decision_function(X)
-        var_hat   = 1./self.alpha_
-        var_hat  += np.sum( np.dot(X[:,self.active_],self.sigma_) * X[:,self.active_], axis = 1)
+        #var_hat   = 1./self.alpha_
+        #var_hat  += np.sum( np.dot(X[:,self.active_],self.sigma_) * X[:,self.active_], axis = 1)
+        var_hat = np.sum(np.dot(X[:, self.active_], self.sigma_) * X[:, self.active_], axis=1)
         return y_hat, var_hat
 
 
@@ -386,6 +392,23 @@ def _logistic_cost_grad(X,Y,w,diagA):
     cost = np.sum( Xw* (1-Y) - log_logistic(Xw)) + np.sum(w*wdA)/2 
     grad  = np.dot(X.T, s - Y) + wdA
     return [cost/n,grad/n]
+
+def _gaussian_cost_grad(X,Y,w,diagA):
+    '''
+        Calculates cost and gradient for logistic regression
+        '''
+    n = X.shape[0]
+    Xw = np.dot(X, w)
+    t = (Y-0.5)*2
+    s = norm.cdf(Xw)
+    cost = -(np.sum(np.log(s[Y==1]), 0) + \
+             np.sum(np.log(1-s[Y==0]), 0))
+    cost = cost + 0.5*(diagA*(w**2))
+
+    temp = norm.pdf(Xw*t)*t/norm.cdf(Xw*t)
+    grad = diagA*w - np.dot(X.T, temp)
+    return [cost / n, grad / n]
+
     
 
         
@@ -444,10 +467,11 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
     [2] Analysis of sparse Bayesian learning (Tipping & Faul 2001)
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
-    def __init__(self, n_iter=100, tol=1e-4, n_iter_solver=15, normalize=True,
-                 tol_solver=1e-4, fit_intercept=True, verbose=False):
+    def __init__(self, n_iter=50, tol=1e-4, n_iter_solver=15, normalize=False,
+                 tol_solver=1e-2, fit_intercept=True, verbose=False):
         self.n_iter             = n_iter
         self.tol                = tol
+        print "Init ", self.tol
         self.n_iter_solver      = n_iter_solver
         self.normalize          = normalize
         self.tol_solver         = tol_solver
@@ -473,7 +497,6 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
             Returns self.
         '''
         X, y = check_X_y(X, y, accept_sparse = None, dtype=np.float64)
-                    
         # normalize, if required
         if self.normalize:
             self._x_mean = np.mean(X,0)
@@ -532,17 +555,24 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
         active    = np.zeros(n_features , dtype = np.bool)
         
         # if we fit intercept, make it active from the beginning
-        if self.fit_intercept:
-            active[0] = True
-            A[0]      = np.finfo(np.float16).eps
-        
+        #if self.fit_intercept:
+        #    active[0] = True
+        #    A[0]      = np.finfo(np.float16).eps
+        active[0] = True
+        A[0] = 1e-3 #np.finfo(np.float16).eps
+
         warning_flag = 0
+        start = time.time()
         for i in range(self.n_iter):
+            cur = time.time()
+            print("___fit ", i, " = ", cur - start)
             Xa      =  X[:,active]
             Aa      =  A[active]
-            
+
             # mean & precision of posterior distribution
             Mn,Sn,B,t_hat, cholesky = self._posterior_dist(Xa,y, Aa)
+            cur = time.time()
+            print("___fit ", i, "(approximation) = ", cur - start)
             if not cholesky:
                 warning_flag += 1
             
@@ -554,10 +584,13 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
 
             # compute quality & sparsity parameters
             s,q,S,Q = self._sparsity_quality(X,Xa,t_hat,B,A,Aa,active,Sn,cholesky)
-
+            cur = time.time()
+            print("___fit ", i, "(SQ) = ", cur - start)
             # update precision parameters of coefficients
+            #print self.tol
             A,converged  = update_precisions(Q,S,q,s,A,active,self.tol,n_samples,self.fit_intercept)
-
+            cur = time.time()
+            print("___fit ", i, "(update alpha) = ", cur - start)
             # terminate if converged
             if converged or i == self.n_iter - 1:
                 break
@@ -594,7 +627,7 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
         y_pred: numpy arra of size (n_samples_test,)
            Predicted values of targets
         '''
-        probs   = self.predict_proba(X)
+        probs = self.predict_proba(X)
         indices = np.argmax(probs, axis = 1)
         y_pred  = self.classes_[indices]
         return y_pred
@@ -667,7 +700,6 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
             pr   = np.asarray(pr).T
             prob = pr / np.reshape(np.sum(pr, axis = 1), (pr.shape[0],1))
         return prob
-
         
     def _convo_approx(self,X,y_hat,sigma):
         ''' Computes approximation to convolution of sigmoid and gaussian'''
@@ -676,30 +708,38 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
         pr  = expit(y_hat * ks)
         return pr
         
-
-    def _sparsity_quality(self,X,Xa,y,B,A,Aa,active,Sn,cholesky):
+    def _sparsity_quality(self, X, Xa, y, B, A, Aa, active, Sn, cholesky):
         '''
         Calculates sparsity & quality parameters for each feature
         '''
-        XB    = X.T*B
-        bxx   = np.dot(B,X**2)
-        Q     = np.dot(X.T,y)
+        XB = X.T * B
+        #XB2 = np.matmul(X.T,np.diag(B))
+        #Xdiff = XB - XB2
+        bxx = np.dot(B, X ** 2)
+        #bxx2 = np.sum(XB*X.T,1)
+        bxy = np.dot(XB, y)
+        YB = y * B
         if cholesky:
             # Here Sn is inverse of lower triangular matrix, obtained from
             # cholesky decomposition
-            XBX = np.dot(XB,Xa)
-            XBX = np.dot(XBX,Sn,out=XBX)
-            S   = bxx - np.sum(XBX**2,1)
+            XBX = np.dot(XB, Xa)
+            XBXS = np.dot(XBX, Sn.T)
+            SXBY = np.dot(Sn, np.dot(Xa.T,YB))
+            S = bxx - np.sum(XBXS ** 2, 1)
+            Q = bxy - np.sum(XBXS*SXBY.T,1)
+            #S = bxx - np.sum(np.matmul(XBXS, XBXS.T), 1)
         else:
-            XSX = np.dot(np.dot(Xa,Sn),Xa.T)
-            S   = bxx - np.sum( np.dot( XB,XSX )*XB,1 )
-        qi    = np.copy(Q)
-        si    = np.copy(S) 
-        Qa,Sa      = Q[active], S[active]
-        qi[active] = Aa * Qa / (Aa - Sa )
-        si[active] = Aa * Sa / (Aa - Sa )
-        return [si,qi,S,Q]
-        
+            XSX = np.dot(np.dot(Xa, Sn), Xa.T)
+            S = bxx - np.sum(np.dot(XB, XSX) * XB, 1)
+            XBXSX = np.matmul(XB, XSX)
+
+            Q = bxy - np.matmul(XBXSX, YB)
+        qi = np.copy(Q)
+        si = np.copy(S)
+        Qa, Sa = Q[active], S[active]
+        qi[active] = Aa * Qa / (Aa - Sa)
+        si[active] = Aa * Sa / (Aa - Sa)
+        return [si, qi, S, Q]
     
     def _posterior_dist(self,X,y,A):
         '''
@@ -707,6 +747,10 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
         '''
         f         = lambda w: _logistic_cost_grad(X,y,w,A)
         w_init    = np.random.random(X.shape[1])
+        #print w_init.shape
+        #print X.shape
+        ##print y.shape
+        #print A.shape
         Mn        = fmin_l_bfgs_b(f, x0 = w_init, pgtol = self.tol_solver,
                                 maxiter = self.n_iter_solver)[0]
         Xm        = np.dot(X,Mn)
@@ -714,7 +758,8 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
         B         = logistic._pdf(Xm) # avoids underflow
         S         = np.dot(X.T*B,X)
         np.fill_diagonal(S, np.diag(S) + A)
-        t_hat     = y - s
+        t_hat     = Xm + (y - s)/B
+        #t_hat = y - s
         cholesky  = True
         # try using Cholesky , if it fails then fall back on pinvh
         try:
@@ -725,8 +770,6 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
             Sn       = pinvh(S)
             cholesky = False
         return [Mn,Sn,B,t_hat,cholesky]
-        
-
 
 ###############################################################################
 #                  Relevance Vector Machine: RVR and RVC
@@ -907,8 +950,9 @@ class RVR(RegressionARD):
         # kernel matrix and mean of predictive distribution
         K, y_hat  = self._kernel_decision_function(X)
         var_hat   = 1./self.alpha_
-        var_hat  += np.sum( np.dot(K,self.sigma_) * K, axis = 1)
-        return y_hat,var_hat
+        #var_hat  += np.sum( np.dot(K,self.sigma_) * K, axis = 1)
+        #var_hat = np.sum(np.dot(K, self.sigma_) * K, axis=1)
+        return y_hat, var_hat
 
 
 
@@ -980,11 +1024,12 @@ class RVC(ClassificationARD):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 100, tol = 1e-4, n_iter_solver = 15, tol_solver = 1e-4,
+    def __init__(self, n_iter = 30, tol = 1e-5, n_iter_solver = 30, tol_solver = 1e-3,
                  fit_intercept = True, verbose = False, kernel = 'rbf', degree = 2,
-                 gamma  = None, coef0  = 1, kernel_params = None):
-        super(RVC,self).__init__(n_iter,tol,n_iter_solver,True,tol_solver,
+                 gamma  = None, coef0  = 0, kernel_params = None):
+        super(RVC,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
                                  fit_intercept,verbose)
+        print "Init RVC", self.tol
         self.kernel        = kernel
         self.degree        = degree
         self.gamma         = gamma
@@ -1009,12 +1054,15 @@ class RVC(ClassificationARD):
         self: object
            self
         '''
+        start = time.time()
         X,y = check_X_y(X,y, accept_sparse = None, dtype = np.float64)
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
                        self.kernel, self.kernel_params)
+        cur = time.time()
         # use fit method of ClassificationARD
         _ = super(RVC,self).fit(K,y)
+        cur = time.time()
         self.relevant_  = [np.where(active==True)[0] for active in self.active_]
         if X.ndim == 1:
             self.relevant_vectors_ = [ X[relevant_] for relevant_ in self.relevant_]
@@ -1057,7 +1105,45 @@ class RVC(ClassificationARD):
                 decision.append(self._decision_function_active(kernel(rv),cf,act,b))
         decision = np.asarray(decision).squeeze().T
         return decision
-        
+
+
+    def get_feature(self, X):
+        '''
+        Computes distance to separating hyperplane between classes. The larger
+        is the absolute value of the decision function further data point is
+        from the decision boundary.
+
+        Parameters
+        ----------
+        X: array-like of size (n_samples_test,n_features)
+           Matrix of explanatory variables
+
+        Returns
+        -------
+        decision: numpy array of size (n_samples_test,)
+           Distance to decision boundary
+        '''
+        check_is_fitted(self, 'coef_')
+        X = check_array(X, accept_sparse=None, dtype=np.float64)
+        n_features = self.relevant_vectors_[0].shape[1]
+        if X.shape[1] != n_features:
+            raise ValueError("X has %d features per sample; expecting %d"
+                             % (X.shape[1], n_features))
+        kernel = lambda rvs: get_kernel(X, rvs, self.gamma, self.degree,
+                                        self.coef0, self.kernel, self.kernel_params)
+        decision = []
+        K = []
+        for rv, cf, act, b in zip(self.relevant_vectors_, self.coef_, self.active_,
+                                  self.intercept_):
+            # if there are no relevant vectors => use intercept only
+            if rv.shape[0] == 0:
+                decision.append(np.ones(X.shape[0]) * b)
+            else:
+                decision.append(self._decision_function_active(kernel(rv), cf, act, b))
+                K.append(kernel(rv))
+        decision = np.asarray(decision).squeeze().T
+        K = np.array(K[0])
+        return K
 
     def predict_proba(self,X):
         '''
