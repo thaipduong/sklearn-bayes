@@ -37,7 +37,7 @@ print("All test are passed ...")
 
 
 from sklearn.utils.estimator_checks import check_estimator
-from skbayes.rvm_ard_models import RegressionARD,ClassificationARD,RVR,RVC
+from skbayes.rvm_ard_models import RegressionARD2,ClassificationARD2,RVR2,RVC2
 from sklearn.svm import SVR
 from sklearn.model_selection import GridSearchCV
 import numpy as np
@@ -50,7 +50,7 @@ import time
 from sklearn.metrics import mean_squared_error
 #get_ipython().run_line_magic('matplotlib', 'inline')
 
-
+'''
 # parameters
 n = 5000
 
@@ -62,7 +62,7 @@ Yc       = 10*np.sinc(Xc[:,0]) + np.random.normal(0,1,n)
 X,x,Y,y  = train_test_split(Xc,Yc,test_size = 0.5, random_state = 0)
 
 # train rvr
-rvm = RVR(gamma = 1,kernel = 'rbf')
+rvm = RVR2(gamma = 1,kernel = 'rbf')
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
@@ -145,7 +145,7 @@ plt.colorbar()
 plt.legend()
 plt.show()
 
-
+'''
 # ### Example 2: Boston Housing
 
 # RVR achieves better MSE on Boston housing dataset than SVR or GBR.
@@ -216,7 +216,7 @@ X,x,Y,y = train_test_split(Xx,Yy,test_size = test_proportion,
                                  random_state = 2)
 
 # train rvm 
-rvm = RVC(kernel = 'rbf', gamma = 3)
+rvm = RVC2(kernel = 'rbf', gamma = 3)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
@@ -235,7 +235,8 @@ svecs = svc.best_estimator_.support_vectors_.shape[0]
 rvecs = np.sum(rvm.active_[0]==True)
 rvm_message = " ====  RVC: time {0}, relevant vectors = {1} \n".format(rvm_time,rvecs)
 print rvm_message
-print classification_report(y,rvm.predict(x))
+y_hat = rvm.predict(x)
+print classification_report(y,y_hat)
 svm_message = " ====  SVC: time {0}, support vectors  = {1} \n".format(svm_time,svecs)
 print svm_message
 print classification_report(y,svc.predict(x))
@@ -257,8 +258,8 @@ Xgrid[:,0] = np.reshape(x1,(n_grid**2,))
 Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 
 sv_grid = svc.predict_proba(Xgrid)[:,1]
-rv_grid = rvm.predict_proba(Xgrid)[:,1]
-
+rv_grid, var_grid = rvm.predict_proba(Xgrid)
+rv_grid = rv_grid[:,1]
 
 
 '''

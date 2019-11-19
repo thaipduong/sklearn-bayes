@@ -13,9 +13,10 @@ Fast Relevance Vector Machine & ARD ( Tipping and Faul (2003) )
                  Regression ARD : VBClassificationARD
 '''
 from .fast_rvm import RVR,RVC,ClassificationARD,RegressionARD
+from .fast_rvm2 import RVR2,RVC2,ClassificationARD2,RegressionARD2
 from .vrvm import VBRegressionARD, VBClassificationARD
 
-__all__ = ['RVR','RVC','ClassificationARD','RegressionARD','VBRegressionARD',
+__all__ = ['RVR','RVC','ClassificationARD','RegressionARD', 'RVR2','RVC2','ClassificationARD2','RegressionARD2','VBRegressionARD',
            'VBClassificationARD']
 
 
