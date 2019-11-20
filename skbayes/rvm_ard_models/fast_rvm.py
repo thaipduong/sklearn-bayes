@@ -670,7 +670,7 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
            Estimated probabilities of target classes
         '''
         y_hat = self.decision_function(X)
-        X = check_array(X, accept_sparse=None, dtype = np.float64)
+        X = check_array(X, accept_sparse=False, dtype = np.float64)
         if self.normalize:
             X = (X - self._x_mean) / self._x_std
         if self.fit_intercept:
@@ -1039,7 +1039,7 @@ class RVC(ClassificationARD):
         self: object
            self
         '''
-        X,y = check_X_y(X,y, accept_sparse = None, dtype = np.float64)
+        X,y = check_X_y(X,y, accept_sparse = False, dtype = np.float64)
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
                        self.kernel, self.kernel_params)
@@ -1070,7 +1070,7 @@ class RVC(ClassificationARD):
            Distance to decision boundary
         '''
         check_is_fitted(self, 'coef_') 
-        X = check_array(X, accept_sparse=None, dtype = np.float64)
+        X = check_array(X, accept_sparse=False, dtype = np.float64)
         n_features = self.relevant_vectors_[0].shape[1]
         if X.shape[1] != n_features:
             raise ValueError("X has %d features per sample; expecting %d"

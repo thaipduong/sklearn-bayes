@@ -277,6 +277,76 @@ models  = [rv_grid,sv_grid]
 model_names = ["RVC","SVC"]
 
 
+############### Find maximum collision probability ################
+
+from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize
+from scipy.optimize import Bounds
+import time
+
+start_traj = np.array([-1, -0.5])#np.array([-1, 0])#np.array([-2, 2])
+end_traj = np.array([0, 1])#np.array([0, 1])#np.array([1,3])
+t_traj = np.linspace(0,1, 1000).reshape(1000,1)
+#traj = start_traj + (end_traj - start_traj)*t_traj
+v = np.array([1, 3])
+a = np.array([0.5, -1])
+traj = start_traj + v*t_traj + a*(t_traj**2)
+test_traj = traj[0:10000,:]
+s = time.time()
+prob, _ = rvm.predict_proba(test_traj)
+prob = np.max(prob[:,1])
+e = time.time()
+print("Max collision probability of traj: ", prob, ", taken ", e - s, "secs")
+
+
+
+def f(x):
+    v = np.array([1, 3])
+    a = np.array([0.5, -1])
+    #p = np.array(start_traj + (end_traj - start_traj)*x)
+    p = np.array(start_traj + v * x + a*(x**2))
+    p = p.reshape([1,2])
+    prob, _ = rvm.predict_proba(p)
+    f = prob[0,1]
+    return -f
+s = time.time()
+res = minimize_scalar(f, bounds=(0,1), method='bounded')
+e = time.time()
+print("Max collision probability of traj (scipy min scalar): ", -res.fun, res.x, ", taken ", e - s, "secs")
+
+
+bound = Bounds([0.0], [1.0])
+x0 = 0.5
+s = time.time()
+res = minimize(f, x0, method='trust-constr', bounds=bound)
+e = time.time()
+print("Max collision probability of traj (scipy trust constr): ", -res.fun, res.x, ", taken ", e - s, "secs")
+
+
+from scipy.optimize import LinearConstraint
+linear_constraint = LinearConstraint([1], [0], [1])
+
+s = time.time()
+res = minimize(f, x0, method='trust-constr', constraints=[linear_constraint])
+e = time.time()
+print("Max collision probability of traj (scipy trust constr (linear constr)): ", -res.fun, res.x, ", taken ", e - s, "secs")
+
+
+linear_constraint = {'type': 'ineq',\
+                     'fun' : lambda x: np.array([1 - x[0], x[0]]),
+                     'jac' : lambda x: np.array([[-1.0], [1.0]])}
+res = minimize(f, x0, method='SLSQP', constraints=[linear_constraint])
+e = time.time()
+print("Max collision probability of traj (scipy SLSQP): ", -res.fun, res.x, ", taken ", e - s, "secs")
+
+linear_constraint = {'type': 'ineq',\
+                     'fun' : lambda x: np.array([1 - x[0],\
+                                                 x[0]]).flatten(),
+                     'jac' : lambda x: np.array([-1.0,\
+                                                 1.0])}
+res = minimize(f, [x0], method='COBYLA', constraints=[linear_constraint])
+e = time.time()
+print("Max collision probability of traj (scipy COBYLA): ", -res.fun, res.x, ", taken ", e - s, "secs")
 
 #plt.plot(rvm.relevant_vectors_,Y[rvm.active_],"co",markersize = 12,  label = "relevant vectors")
 for model, model_name in zip(models, model_names):
@@ -298,6 +368,8 @@ for model, model_name in zip(models, model_names):
         svrv = rvm.relevant_vectors_[0]
         point_label = "relevant vecs"
     plt.plot(svrv[:, 0], svrv[:, 1], 'co', markersize=8, label=point_label)
+    plt.plot(traj[:,0], traj[:,1],'go',markersize=4)
+    # plt.plot()
     plt.plot()
     title = model_name
     plt.title(title)

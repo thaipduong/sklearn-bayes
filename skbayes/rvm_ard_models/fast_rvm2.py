@@ -396,7 +396,7 @@ def _logistic_cost_grad(X,Y,w,diagA):
 
 def _gaussian_cost_grad(X,Y,w,diagA):
     '''
-        Calculates cost and gradient for logistic regression
+        Calculates cost and gradient for probit regression
         '''
     n = X.shape[0]
     Xw = np.dot(X, w)
@@ -496,7 +496,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         self : object
             Returns self.
         '''
-        X, y = check_X_y(X, y, accept_sparse = None, dtype=np.float64)
+        X, y = check_X_y(X, y, accept_sparse = False, dtype=np.float64)
         # normalize, if required
         if self.normalize:
             self._x_mean = np.mean(X,0)
@@ -658,7 +658,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
            Distance to decision boundary
         '''
         check_is_fitted(self, 'coef_') 
-        X = check_array(X, accept_sparse=None, dtype = np.float64)
+        X = check_array(X, accept_sparse=False, dtype = np.float64)
         n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:
             raise ValueError("X has %d features per sample; expecting %d"
@@ -685,7 +685,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
            Estimated probabilities of target classes
         '''
         y_hat = self.decision_function(X)
-        X = check_array(X, accept_sparse=None, dtype = np.float64)
+        X = check_array(X, accept_sparse=False, dtype = np.float64)
         if self.normalize:
             X = (X - self._x_mean) / self._x_std
         if self.fit_intercept:
@@ -1057,7 +1057,7 @@ class RVC2(ClassificationARD2):
         self: object
            self
         '''
-        X,y = check_X_y(X,y, accept_sparse = None, dtype = np.float64)
+        X,y = check_X_y(X,y, accept_sparse = False, dtype = np.float64)
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
                        self.kernel, self.kernel_params)
@@ -1087,7 +1087,7 @@ class RVC2(ClassificationARD2):
            Distance to decision boundary
         '''
         check_is_fitted(self, 'coef_')
-        X = check_array(X, accept_sparse=None, dtype=np.float64)
+        X = check_array(X, accept_sparse=False, dtype=np.float64)
         n_features = self.relevant_vectors_[0].shape[1]
         if X.shape[1] != n_features:
             raise ValueError("X has %d features per sample; expecting %d"
@@ -1115,6 +1115,43 @@ class RVC2(ClassificationARD2):
         var = np.sum(np.matmul(K, S) * K, axis=1)
         # diff = var - var2
         return decision, var
+
+    def get_feature(self, X):
+        '''
+        Computes distance to separating hyperplane between classes. The larger
+        is the absolute value of the decision function further data point is
+        from the decision boundary.
+
+        Parameters
+        ----------
+        X: array-like of size (n_samples_test,n_features)
+           Matrix of explanatory variables
+
+        Returns
+        -------
+        decision: numpy array of size (n_samples_test,)
+           Distance to decision boundary
+        '''
+        check_is_fitted(self, 'coef_')
+        X = check_array(X, accept_sparse=False, dtype=np.float64)
+        n_features = self.relevant_vectors_[0].shape[1]
+        if X.shape[1] != n_features:
+            raise ValueError("X has %d features per sample; expecting %d"
+                             % (X.shape[1], n_features))
+        kernel = lambda rvs: get_kernel(X, rvs, self.gamma, self.degree,
+                                        self.coef0, self.kernel, self.kernel_params)
+        K = []
+        for rv, cf, act, b in zip(self.relevant_vectors_, self.coef_, self.active_,
+                                  self.intercept_):
+            # if there are no relevant vectors => use intercept only
+            if rv.shape[0] != 0:
+                K.append(kernel(rv))
+        K = np.array(K[0])
+        w = self.coef_[0][self.active_[0]]
+        if self.fit_intercept:
+            K = np.concatenate((np.ones([K.shape[0], 1]), K), 1)
+        mu = self.relevant_vectors_[0]
+        return K, w, mu
 
     def predict_proba(self, X):
         '''
@@ -1144,3 +1181,8 @@ class RVC2(ClassificationARD2):
             prob = np.vstack([1 - prob, prob]).T
         prob = prob / np.reshape(np.sum(prob, axis=1), (prob.shape[0], 1))
         return prob, var
+
+    def predict_proba_grad(self, X, dX):
+        K, w, mu = self.get_feature(X)
+
+
