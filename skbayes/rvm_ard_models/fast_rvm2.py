@@ -468,7 +468,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     def __init__(self, n_iter=50, tol=1e-4, n_iter_solver=15, normalize=False,
-                 tol_solver=1e-2, fit_intercept=INTERCEPT, verbose=False):
+                 tol_solver=1e-2, fit_intercept=INTERCEPT, fixed_intercept =0.0, verbose=False):
         self.n_iter             = n_iter
         self.tol                = tol
         print "Init ", self.tol
@@ -476,6 +476,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         self.normalize          = normalize
         self.tol_solver         = tol_solver
         self.fit_intercept      = fit_intercept
+        self.fixed_intercept = fixed_intercept
         self.verbose            = verbose
     
     
@@ -601,7 +602,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
         if cholesky:
            Sn = np.dot(Sn.T,Sn) 
-        intercept_ = 0
+        intercept_ = self.fixed_intercept
         if self.fit_intercept:
            n_features -= 1
            if active[0] == True:
@@ -1027,11 +1028,11 @@ class RVC2(ClassificationARD2):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 30, tol = 1e-5, n_iter_solver = 30, tol_solver = 1e-3,
-                 fit_intercept = INTERCEPT, verbose = False, kernel = 'rbf', degree = 2,
+    def __init__(self, n_iter = 100, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
+                 fit_intercept = INTERCEPT, fixed_intercept = -0.0, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC2,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
-                                 fit_intercept,verbose)
+                                 fit_intercept, fixed_intercept, verbose)
         print "Init RVC", self.tol
         self.kernel        = kernel
         self.degree        = degree

@@ -212,11 +212,15 @@ test_proportion = 0.1
 
 # create dataset & split into train/test parts
 Xx,Yy   = make_moons(n_samples = n, noise = 0.2, random_state = 1)
+
+#data = np.load("./XY2.npz")
+#Xx = data['X']
+#Yy = data['Y']
 X,x,Y,y = train_test_split(Xx,Yy,test_size = test_proportion, 
                                  random_state = 2)
 
 # train rvm 
-rvm = RVC2(kernel = 'rbf', gamma = 3)
+rvm = RVC2(kernel = 'rbf', gamma = 5)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
@@ -243,13 +247,13 @@ print classification_report(y,svc.predict(x))
 
 # create grid
 n_grid = 500
-max_x      = np.max(X,axis = 0)
-min_x      = np.min(X,axis = 0)
+max_x      = 5*np.max(X,axis = 0)
+min_x      = 5*np.min(X,axis = 0)
 X1         = np.linspace(min_x[0],max_x[0],n_grid)
 X2         = np.linspace(min_x[1],max_x[1],n_grid)
 n_grid = 500
-max_x      = np.max(X,axis = 0)
-min_x      = np.min(X,axis = 0)
+max_x      = 5*np.max(X,axis = 0)
+min_x      = 5*np.min(X,axis = 0)
 X1         = np.linspace(min_x[0],max_x[0],n_grid)
 X2         = np.linspace(min_x[1],max_x[1],n_grid)
 x1,x2      = np.meshgrid(X1,X2)
@@ -351,11 +355,14 @@ print("Max collision probability of traj (scipy COBYLA): ", -res.fun, res.x, ", 
 #plt.plot(rvm.relevant_vectors_,Y[rvm.active_],"co",markersize = 12,  label = "relevant vectors")
 for model, model_name in zip(models, model_names):
     plt.figure(figsize = (12,8))
-    #levels = np.arange(0,1, 0.0005)
+    levels = np.arange(0,1, 0.0005)
     #ax.contour3D(X1,X2,np.reshape(model,(n_grid,n_grid)), 100, cmap='coolwarm',
     #                   linewidth=0, antialiased=False)
-    plt.contourf(X1, X2, np.reshape(model, (n_grid, n_grid)), cmap='coolwarm',  figsize = (10,16))
-    plt.colorbar()
+    plt.contourf(X1, X2, np.reshape(model, (n_grid, n_grid)), cmap='coolwarm')
+    cb  = plt.colorbar()
+    cb.ax.tick_params(labelsize=15)
+    plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+
     plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 4)
     plt.plot(X[Y==1,0],X[Y==1,1],"ro", markersize = 4)
     # plot 'support' or 'relevant' vectors
@@ -368,13 +375,15 @@ for model, model_name in zip(models, model_names):
         svrv = rvm.relevant_vectors_[0]
         point_label = "relevant vecs"
     plt.plot(svrv[:, 0], svrv[:, 1], 'co', markersize=8, label=point_label)
-    plt.plot(traj[:,0], traj[:,1],'go',markersize=4)
+    #plt.plot(traj[:,0], traj[:,1],'go',markersize=4)
     # plt.plot()
     plt.plot()
     title = model_name
-    plt.title(title)
-    plt.xlabel("x1")
-    plt.ylabel("x2")
+    plt.title(title, fontsize = 20)
+    plt.xticks(fontsize=15)
+    plt.yticks(fontsize=15)
+    plt.xlabel("x1", fontsize = 20)
+    plt.ylabel("x2", fontsize = 20)
     plt.legend()
 plt.show()
 '''

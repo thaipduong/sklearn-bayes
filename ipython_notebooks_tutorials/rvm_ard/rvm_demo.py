@@ -50,7 +50,7 @@ import time
 from sklearn.metrics import mean_squared_error
 #get_ipython().run_line_magic('matplotlib', 'inline')
 
-
+'''
 # parameters
 n = 5000
 
@@ -59,7 +59,7 @@ np.random.seed(0)
 Xc       = np.ones([n,1])
 Xc[:,0]  = np.linspace(-5,5,n)
 Yc       = 10*np.sinc(Xc[:,0]) + np.random.normal(0,1,n)
-X,x,Y,y  = train_test_split(Xc,Yc,test_size = 0.5, random_state = 0)
+X,x,Y,y  = train_test_split(Xc,Yc,test_size = 0.1, random_state = 0)
 
 # train rvr
 rvm = RVR(gamma = 1,kernel = 'rbf')
@@ -144,7 +144,7 @@ plt.title("CDF of Predictive Distribution of Relevance Vector Regression")
 plt.colorbar()
 plt.legend()
 plt.show()
-
+'''
 
 # ### Example 2: Boston Housing
 
@@ -212,11 +212,14 @@ test_proportion = 0.1
 
 # create dataset & split into train/test parts
 Xx,Yy   = make_moons(n_samples = n, noise = 0.2, random_state = 1)
+#data = np.load("./XY2.npz")
+#Xx = data['X']
+#Yy = data['Y']
 X,x,Y,y = train_test_split(Xx,Yy,test_size = test_proportion, 
                                  random_state = 2)
 
 # train rvm 
-rvm = RVC(kernel = 'rbf', gamma = 3)
+rvm = RVC(kernel = 'rbf', gamma = 2, fit_intercept = False)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
@@ -242,13 +245,13 @@ print classification_report(y,svc.predict(x))
 
 # create grid
 n_grid = 500
-max_x      = np.max(X,axis = 0)
-min_x      = np.min(X,axis = 0)
+max_x      = 2*np.max(X,axis = 0)
+min_x      = 2*np.min(X,axis = 0)
 X1         = np.linspace(min_x[0],max_x[0],n_grid)
 X2         = np.linspace(min_x[1],max_x[1],n_grid)
 n_grid = 500
-max_x      = np.max(X,axis = 0)
-min_x      = np.min(X,axis = 0)
+max_x      = 2*np.max(X,axis = 0)
+min_x      = 2*np.min(X,axis = 0)
 X1         = np.linspace(min_x[0],max_x[0],n_grid)
 X2         = np.linspace(min_x[1],max_x[1],n_grid)
 x1,x2      = np.meshgrid(X1,X2)
