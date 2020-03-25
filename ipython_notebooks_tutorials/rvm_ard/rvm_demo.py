@@ -38,6 +38,7 @@ print("All test are passed ...")
 
 from sklearn.utils.estimator_checks import check_estimator
 from skbayes.rvm_ard_models import RegressionARD,ClassificationARD,RVR,RVC
+from sklearn.svm import SVC
 from sklearn.svm import SVR
 from sklearn.model_selection import GridSearchCV
 import numpy as np
@@ -200,10 +201,10 @@ print "\n     MSE for GBR on test set: {0} \n".format(mse(y,gbr.predict(x)))
 
 # In[23]:
 
-
+'''
 from sklearn.datasets import make_moons
 from sklearn.metrics import classification_report
-from sklearn.svm import SVC
+
 
 
 # Parameters
@@ -264,16 +265,6 @@ rv_grid = rvm.predict_proba(Xgrid)[:,1]
 
 
 
-'''
-Kgoal = rvm.get_feature(goal)
-Kgrid = rvm.get_feature(Xgrid)
-decision, var = rvm.decision_function(Xgrid)
-dist = Kgrid - Kgoal
-attracive_field = np.linalg.norm(dist, axis=1)
-K = 1
-rv_grid_truncated = [1 if i >0.7 else i for i in rv_grid]
-nav_fcn = (attracive_field)/ np.power((attracive_field - decision), 1/K)
-'''
 
 models  = [rv_grid,sv_grid]
 model_names = ["RVC","SVC"]
@@ -348,6 +339,10 @@ Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 
 rv_grid = rvm.predict_proba(Xgrid)
 sv_grid = svc.predict_proba(Xgrid)
+y_rv_prob = rvm.predict_proba(x)
+y_rv_predict = np.argmax(y_rv_prob, axis=1)
+y_sv_prob = svc.predict_proba(x)
+y_sv_predict = np.argmax(y_sv_prob, axis=1)
 grids   = [rv_grid, sv_grid]
 names   = ['RVC','SVC']
 classes = np.unique(y)
@@ -357,14 +352,25 @@ for grid,name in zip(grids,names):
     fig, axarr = plt.subplots(nrows=1, ncols=3, figsize = (20,8))
     for ax,cl,model in zip(axarr,classes,grid.T):
         ax.contourf(x1,x2,np.reshape(model,(n_grid,n_grid)),cmap=cm.coolwarm)
-        ax.plot(x[y==cl,0],x[y==cl,1],"ro", markersize = 5)
-        ax.plot(x[y!=cl,0],x[y!=cl,1],"bo", markersize = 5)
+        ax.plot(x[y_rv_predict==0,0],x[y_rv_predict==0,1],"ro", markersize = 5)
+        ax.plot(x[y_rv_predict==1,0],x[y_rv_predict==1,1],"bo", markersize = 5)
+        ax.plot(x[y_rv_predict == 2, 0], x[y_rv_predict == 2, 1], "go", markersize=5)
+    plt.suptitle(' '.join(['Decision boundary for',name,'OVR multiclass classification']))
+    plt.show()
+cl_map = ["ro", "bo", "go"]
+y_cl = [cl_map[label] for label in y]
+for grid,name in zip(grids,names):
+    fig, ax = plt.subplots(figsize = (20,8))
+    #for model in zip(grid.T):
+    #    ax.contourf(x1,x2,np.reshape(model,(n_grid,n_grid)),cmap=cm.coolwarm)
+    ax.plot(x[:,0],x[:,1],cmap = y_cl, markersize = 5)
+    #ax.plot(x[y!=cl,0],x[y!=cl,1],"bo", markersize = 5)
     plt.suptitle(' '.join(['Decision boundary for',name,'OVR multiclass classification']))
     plt.show()
     
 print classification_report(y,rvm.predict(x))
 print classification_report(y,svc.predict(x))
-
+'''
 
 # ### Example: Pima Indians Diabetes dataset
 

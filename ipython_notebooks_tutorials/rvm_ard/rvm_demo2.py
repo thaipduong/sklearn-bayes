@@ -201,17 +201,17 @@ print "\n     MSE for GBR on test set: {0} \n".format(mse(y,gbr.predict(x)))
 # In[23]:
 
 
-from sklearn.datasets import make_moons
+from sklearn.datasets import make_moons, make_circles
 from sklearn.metrics import classification_report
 from sklearn.svm import SVC
 
-
+''
 # Parameters
 n = 1000
 test_proportion = 0.1
 
 # create dataset & split into train/test parts
-Xx,Yy   = make_moons(n_samples = n, noise = 0.2, random_state = 1)
+Xx,Yy   = make_circles(n_samples = n, noise = 0.2, random_state = 1)
 
 #data = np.load("./XY2.npz")
 #Xx = data['X']
@@ -262,7 +262,37 @@ Xgrid[:,0] = np.reshape(x1,(n_grid**2,))
 Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 
 sv_grid = svc.predict_proba(Xgrid)[:,1]
-rv_grid, var_grid = rvm.predict_proba(Xgrid)
+rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
+#A = np.array([-1.1, 0.9])
+#B = np.array([0.0, -2.0])
+A = np.array([-4.0, 4.0])
+B = np.array([4.0, -4.0])
+line_seg_x = np.linspace(A[0], B[0], 100)
+line_seg_y = np.linspace(A[1], B[1], 100)
+line_seg = np.vstack((line_seg_x, line_seg_y)).transpose()
+c = -0.1
+upper_line, upper_line2, upper_line3, upper_line4 = rvm.predict_upperbound(line_seg, c=c)
+rv_line, var_line, num, denom = rvm.predict_proba(line_seg)
+upper_line5 = rvm.predict_upperbound_line(line_seg, A, c=-0.1)
+line_seg_rev = np.flipud(line_seg)
+upper_line6 = rvm.predict_upperbound_line(line_seg_rev, B, c=-0.1)
+upper_line6 = np.flip(upper_line6)
+upper_grid, upper_grid2, upper_grid3, upper_grid4 = rvm.predict_upperbound(Xgrid, c=c)
+upper_line7 = np.minimum(upper_line5, upper_line6)
+
+plt.figure(figsize=(12, 8))
+#plt.plot(rv_line[:,1] - 0.5, label="GT")
+a = np.where(upper_line7 >0)[0]
+
+gt = num - c*denom
+plt.plot(gt, label="GT")
+plt.plot(upper_line, label="upper bound 1", linestyle="dashed")
+plt.plot(upper_line2, label="Fastron bound", linestyle = "dotted")
+plt.plot(upper_line4, label="AM-GM bound",  linestyle="dotted")
+#plt.plot(upper_line7, label="triangle bound",  linestyle="dashdot")
+#plt.plot(upper_line6, label="triangle bound",  linestyle="dashdot")
+plt.plot(np.zeros(100), label="zero",  linestyle="dashdot")
+plt.legend()
 rv_grid = rv_grid[:,1]
 
 
@@ -277,12 +307,12 @@ rv_grid_truncated = [1 if i >0.7 else i for i in rv_grid]
 nav_fcn = (attracive_field)/ np.power((attracive_field - decision), 1/K)
 '''
 
-models  = [rv_grid,sv_grid]
-model_names = ["RVC","SVC"]
+models  = [rv_grid, upper_grid, upper_grid2, upper_grid4]
+model_names = ["RVC", "upperbound", "upperbound_fastron", "upperbound AMGM"]
 
 
 ############### Find maximum collision probability ################
-
+'''
 from scipy.optimize import minimize_scalar
 from scipy.optimize import minimize
 from scipy.optimize import Bounds
@@ -297,7 +327,7 @@ a = np.array([0.5, -1])
 traj = start_traj + v*t_traj + a*(t_traj**2)
 test_traj = traj[0:10000,:]
 s = time.time()
-prob, _ = rvm.predict_proba(test_traj)
+prob, _, _, _ = rvm.predict_proba(test_traj)
 prob = np.max(prob[:,1])
 e = time.time()
 print("Max collision probability of traj: ", prob, ", taken ", e - s, "secs")
@@ -310,7 +340,7 @@ def f(x):
     #p = np.array(start_traj + (end_traj - start_traj)*x)
     p = np.array(start_traj + v * x + a*(x**2))
     p = p.reshape([1,2])
-    prob, _ = rvm.predict_proba(p)
+    prob, _, _, _ = rvm.predict_proba(p)
     f = prob[0,1]
     return -f
 s = time.time()
@@ -351,7 +381,7 @@ linear_constraint = {'type': 'ineq',\
 res = minimize(f, [x0], method='COBYLA', constraints=[linear_constraint])
 e = time.time()
 print("Max collision probability of traj (scipy COBYLA): ", -res.fun, res.x, ", taken ", e - s, "secs")
-
+'''
 #plt.plot(rvm.relevant_vectors_,Y[rvm.active_],"co",markersize = 12,  label = "relevant vectors")
 for model, model_name in zip(models, model_names):
     plt.figure(figsize = (12,8))
@@ -361,10 +391,19 @@ for model, model_name in zip(models, model_names):
     plt.contourf(X1, X2, np.reshape(model, (n_grid, n_grid)), cmap='coolwarm')
     cb  = plt.colorbar()
     cb.ax.tick_params(labelsize=15)
-    plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+    if model_name == "RVC":
+        plt.contour(X1, X2, np.reshape(upper_grid, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles="dashed")
+        plt.contour(X1, X2, np.reshape(upper_grid2, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles = "dotted")
+        #plt.contour(X1, X2, np.reshape(upper_grid3, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+        #            linestyles="solid")
+        plt.contour(X1, X2, np.reshape(upper_grid4, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+                    linestyles="dashdot")
+        plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+    else:
+        plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r")
 
-    plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 4)
-    plt.plot(X[Y==1,0],X[Y==1,1],"ro", markersize = 4)
+    #plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 4)
+    #plt.plot(X[Y==1,0],X[Y==1,1],"ro", markersize = 4)
     # plot 'support' or 'relevant' vectors
     svrv = None
     point_label = None
@@ -374,7 +413,13 @@ for model, model_name in zip(models, model_names):
     else:
         svrv = rvm.relevant_vectors_[0]
         point_label = "relevant vecs"
-    plt.plot(svrv[:, 0], svrv[:, 1], 'co', markersize=8, label=point_label)
+    cm = ['b' if cw < 0 else 'r' for cw in rvm.corrected_weights]
+    plt.plot(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], 'ro', markersize=8, label=point_label)
+    plt.plot(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], 'bo', markersize=8,
+             label=point_label)
+    print("All relevance vectors")
+    for i in range(len(rvm.corrected_weights)):
+        print(i, rvm.orig_weights[i], rvm.corrected_weights[i], svrv[i,:])
     #plt.plot(traj[:,0], traj[:,1],'go',markersize=4)
     # plt.plot()
     plt.plot()

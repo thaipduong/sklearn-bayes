@@ -8,12 +8,14 @@ from sklearn.utils.extmath import pinvh,log_logistic,safe_sparse_dot
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.utils.validation import check_is_fitted
 from scipy.special import expit
+from scipy.special import erf
 from scipy.optimize import fmin_l_bfgs_b
 from scipy.linalg import solve_triangular
 from scipy.stats import logistic
 from scipy.stats import norm
 from numpy.linalg import LinAlgError
 from scipy.stats import multivariate_normal
+from numpy import linalg as LA
 import scipy.sparse
 import warnings
 import time
@@ -468,7 +470,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     def __init__(self, n_iter=50, tol=1e-4, n_iter_solver=15, normalize=False,
-                 tol_solver=1e-2, fit_intercept=INTERCEPT, fixed_intercept =0.0, verbose=False):
+                 tol_solver=1e-2, fit_intercept=INTERCEPT, fixed_intercept =-0.5, verbose=False):
         self.n_iter             = n_iter
         self.tol                = tol
         print "Init ", self.tol
@@ -628,7 +630,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         y_pred: numpy arra of size (n_samples_test,)
            Predicted values of targets
         '''
-        probs, var = self.predict_proba(X)
+        probs, var, _, _ = self.predict_proba(X)
         indices = np.argmax(probs, axis = 1)
         y_pred  = self.classes_[indices]
         return y_pred
@@ -1028,8 +1030,8 @@ class RVC2(ClassificationARD2):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 100, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
-                 fit_intercept = INTERCEPT, fixed_intercept = -0.0, verbose = False, kernel = 'rbf', degree = 2,
+    def __init__(self, n_iter = 300, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
+                 fit_intercept = INTERCEPT, fixed_intercept = -0.5, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC2,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
                                  fit_intercept, fixed_intercept, verbose)
@@ -1181,9 +1183,113 @@ class RVC2(ClassificationARD2):
         if prob.ndim == 1:
             prob = np.vstack([1 - prob, prob]).T
         prob = prob / np.reshape(np.sum(prob, axis=1), (prob.shape[0], 1))
-        return prob, var
+        return prob, var, decision,  np.sqrt(var + 1)
 
-    def predict_proba_grad(self, X, dX):
+#    def predict_proba_grad(self, X, dX):
+#
+    def predict_upperbound(self, X, c = -0.1):
         K, w, mu = self.get_feature(X)
+        S =  np.abs(self.sigma_[0])
+        #trace = np.trace(S)
+        #sum_col = np.sum(S,axis=1)
+        #lambda_max_sqrt = np.sqrt(np.max(sum_col))
+        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
+        #temp1 = norm.cdf(-0.1)
+        #temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
+        #upperbound = np.matmul(K, w)
+        #upperbound = upperbound + self.intercept_
+        w2 = w - c*lambda_max_sqrt
+        upperbound = np.matmul(K,w2)
+        upperbound = upperbound + self.intercept_ - c
+        self.corrected_weights = w2
+        self.orig_weights = w
+        upperbound2, pos_term, neg_term, _, _, _ = self.collision_checking(K, mu, w2, X)
+        upperbound2 = upperbound2.flatten()
+        upperbound2 = upperbound2 + self.intercept_ - c
+        upperbound4 = pos_term - 2*np.sqrt(neg_term*(self.intercept_ - c))
+        #n = np.max(1, (self.intercept_ - c)/neg_term) + 1
+        n = np.array([1 if n_i < 1 else n_i for n_i in (self.intercept_ - c)/neg_term]) + 1
+        n = 1e189*np.ones(len(upperbound))
+        temp = (c - self.intercept_)/(n-1)
+        upperbound3 = pos_term[:,0] - n*np.power(-neg_term[:,0], 1/n)*np.power(temp, (n-1)/n)
+        return upperbound, upperbound2, upperbound3, upperbound4
+
+    def predict_upperbound_line(self, X, A, c=-0.1):
+        K, w, mu = self.get_feature(X)
+        S = np.abs(self.sigma_[0])
+        # trace = np.trace(S)
+        # sum_col = np.sum(S,axis=1)
+        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
+        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
+        # temp1 = norm.cdf(-0.1)
+        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
+        # upperbound = np.matmul(K, w)
+        # upperbound = upperbound + self.intercept_
+        w2 = w - c * lambda_max_sqrt
+        _, pos_term, neg_term, neg_coff, neg_dist, _ = self.collision_checking(K, mu, w2, X)
+        A = A.reshape([1,2])
+        dist_to_A = get_kernel( X, A, self.gamma, self.degree, self.coef0,
+                       self.kernel, self.kernel_params)
+        upperbound5 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
+        return upperbound5
+    '''
+    def predict_upperbound_line_cs(self, X, A, c=-0.1):
+        K, w, mu = self.get_feature(X)
+        S = np.abs(self.sigma_[0])
+        # trace = np.trace(S)
+        # sum_col = np.sum(S,axis=1)
+        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
+        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
+        # temp1 = norm.cdf(-0.1)
+        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
+        # upperbound = np.matmul(K, w)
+        # upperbound = upperbound + self.intercept_
+        w2 = w - c * lambda_max_sqrt
+        _, pos_term, neg_term, neg_coff, neg_dist, neg_min_idx = self.collision_checking(K, mu, w2, X)
+        A = A.reshape([1,2])
+        dist_to_A = get_kernel( X, A, self.gamma, self.degree, self.coef0,
+                       self.kernel, self.kernel_params)
+        upperbound6 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
+        return upperbound6
+    '''
+    def collision_checking(self, K, mu, alpha, X_test):
+        f_predict_plus = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        f_predict_minus = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        f_predict_upperbound = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        f_predict_upperbound_pos = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        f_predict_upperbound_neg = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        neg_coff = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        neg_dist = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        neg_min_idx = np.zeros([X_test.shape[0], 1], dtype=np.float64)
+        minus_apha = alpha[alpha < 0]
+        plus_apha = alpha[alpha > 0]
+        plus_apha_total = np.sum(plus_apha)
+        minus_alpha_total = np.abs(np.sum(minus_apha))
+        for i in range(X_test.shape[0]):
+            G_row = np.zeros([len(alpha), 1])
+            for j in range(len(alpha)):
+                if alpha[j] >= 0:
+                    continue
+                G_row[j] = K[i, j]
+                # G_row[j] = self.kernel(X[j, :], x_test, gamma=alpha[j]/plus_alpha_total) if alpha[j] > 0 else 0
+            # print("total_dist", total_dist)
+            f_predict_minus[i][0] = np.max(G_row)  # minus_alpha_total*np.exp(-self.gamma*total_dist)
+            minus_idx_min = np.argmax(G_row)
+            G_row = np.zeros([len(alpha), 1])
+            for j in range(len(alpha)):
+                if alpha[j] <= 0:
+                    continue
+                G_row[j] = K[i, j]
+            f_predict_plus[i][0] = np.max(G_row)
+            f_predict_upperbound[i][0] = plus_apha_total * f_predict_plus[i][0] + alpha[minus_idx_min] * \
+                                         f_predict_minus[i][0]
+            f_predict_upperbound_pos[i][0] = plus_apha_total * f_predict_plus[i][0]
+            f_predict_upperbound_neg[i][0] = alpha[minus_idx_min] * f_predict_minus[i][0]
+            neg_coff[i][0] = -alpha[minus_idx_min]
+            neg_dist[i][0] = f_predict_minus[i][0]
+            neg_min_idx[i][0] = minus_idx_min
+        return f_predict_upperbound, f_predict_upperbound_pos , f_predict_upperbound_neg, neg_coff, neg_dist, neg_min_idx
+
+
 
 
