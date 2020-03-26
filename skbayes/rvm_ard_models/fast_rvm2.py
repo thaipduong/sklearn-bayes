@@ -21,6 +21,8 @@ import warnings
 import time
 
 INTERCEPT = False
+THRESHOLD = -0.1
+UNKNOWN_PROB = -0.1
 #TODO: predict_proba for RVC with Laplace Approximation
 
 
@@ -470,7 +472,7 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     def __init__(self, n_iter=50, tol=1e-4, n_iter_solver=15, normalize=False,
-                 tol_solver=1e-2, fit_intercept=INTERCEPT, fixed_intercept =-0.5, verbose=False):
+                 tol_solver=1e-2, fit_intercept=INTERCEPT, fixed_intercept =UNKNOWN_PROB, verbose=False):
         self.n_iter             = n_iter
         self.tol                = tol
         print "Init ", self.tol
@@ -1031,7 +1033,7 @@ class RVC2(ClassificationARD2):
     '''
     
     def __init__(self, n_iter = 300, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
-                 fit_intercept = INTERCEPT, fixed_intercept = -0.5, verbose = False, kernel = 'rbf', degree = 2,
+                 fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC2,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
                                  fit_intercept, fixed_intercept, verbose)
@@ -1187,7 +1189,7 @@ class RVC2(ClassificationARD2):
 
 #    def predict_proba_grad(self, X, dX):
 #
-    def predict_upperbound(self, X, c = -0.1):
+    def predict_upperbound(self, X, c = THRESHOLD):
         K, w, mu = self.get_feature(X)
         S =  np.abs(self.sigma_[0])
         #trace = np.trace(S)
@@ -1214,7 +1216,7 @@ class RVC2(ClassificationARD2):
         upperbound3 = pos_term[:,0] - n*np.power(-neg_term[:,0], 1/n)*np.power(temp, (n-1)/n)
         return upperbound, upperbound2, upperbound3, upperbound4
 
-    def predict_upperbound_line(self, X, A, c=-0.1):
+    def predict_upperbound_line(self, X, A, c=THRESHOLD):
         K, w, mu = self.get_feature(X)
         S = np.abs(self.sigma_[0])
         # trace = np.trace(S)
