@@ -758,10 +758,10 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         # print A.shape
         Mn = fmin_l_bfgs_b(f, x0=w_init, pgtol=self.tol_solver,
                            maxiter=self.n_iter_solver)[0]
-        Xm = np.dot(X, Mn)
+        Xm = np.dot(X, Mn) + self.fixed_intercept
         s = norm.cdf(Xm)
         t = (y - 0.5) * 2
-        temp = norm.pdf(t * Xm) * t / norm.cdf(Xm * t)
+        temp = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-200
         B = temp * (Xm + temp)
         # B         = logistic._pdf(Xm) # avoids underflow
         S = np.dot(X.T * B, X)
@@ -1032,7 +1032,7 @@ class RVC2(ClassificationARD2):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 300, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
+    def __init__(self, n_iter = 100, tol = 1e-2, n_iter_solver = 50, tol_solver = 1e-3,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC2,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,

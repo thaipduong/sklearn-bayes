@@ -61,7 +61,7 @@ test_proportion = 0.1
 #uninflated_laser_Yy = uninflated_laser_data['labels']
 #uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
 
-laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples.npz")
+laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_good.npz")
 laser_Xx = laser_data['points']
 laser_Yy = laser_data['labels']
 laser_Yy[laser_Yy < 0] = 0
@@ -72,14 +72,14 @@ laser_Yy_pos = laser_Yy[laser_Yy > 0]
 laser_Xx_pos = laser_Xx[laser_Yy > 0, :]
 pos_portion = sum(laser_Yy[laser_Yy > 0])
 neg_portion = len(laser_Yy) - pos_portion
-r = max(int(neg_portion*0.75/pos_portion), 0)
+r = max(int(neg_portion/pos_portion), 0)
 
 for i in range(r):
     laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
     laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
 
 
-Xx = laser_Xx*0.5
+Xx = laser_Xx*0.25
 Yy = laser_Yy
 
 
@@ -91,10 +91,15 @@ Yy = laser_Yy
 X,x,Y,y = train_test_split(Xx,Yy,test_size = test_proportion,
                                  random_state = 2)
 
-#X = Xx
-#Y = Yy
-# train rvm 
-rvm = RVC2(kernel = 'rbf', gamma = 10)
+from sklearn.utils import shuffle
+ind_list = [i for i in range(len(Yy))]
+shuffle(ind_list)
+X = Xx[ind_list,:]
+Y = Yy[ind_list]
+
+
+# train rvm
+rvm = RVC2(kernel = 'rbf', gamma = 7.5)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
