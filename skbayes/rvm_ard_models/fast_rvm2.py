@@ -21,8 +21,8 @@ import warnings
 import time
 
 INTERCEPT = False
-THRESHOLD = -0.1
-UNKNOWN_PROB = -0.1
+THRESHOLD = -0.01
+UNKNOWN_PROB = -0.05
 #TODO: predict_proba for RVC with Laplace Approximation
 
 
@@ -758,15 +758,16 @@ class ClassificationARD2(BaseEstimator,LinearClassifierMixin):
         # print A.shape
         Mn = fmin_l_bfgs_b(f, x0=w_init, pgtol=self.tol_solver,
                            maxiter=self.n_iter_solver)[0]
-        Xm = np.dot(X, Mn) + self.fixed_intercept
+        Xm_nobias = np.dot(X, Mn)
+        Xm = Xm_nobias + self.fixed_intercept
         s = norm.cdf(Xm)
         t = (y - 0.5) * 2
-        temp = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-200
-        B = temp * (Xm + temp)
+        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t)# + 1e-200
+        B = eta * (Xm_nobias + eta)
         # B         = logistic._pdf(Xm) # avoids underflow
         S = np.dot(X.T * B, X)
         np.fill_diagonal(S, np.diag(S) + A)
-        t_hat = Xm + (y - s) / B
+        t_hat = Xm_nobias + eta / B
         # t_hat = y - s
         cholesky = True
         # try using Cholesky , if it fails then fall back on pinvh
@@ -1032,7 +1033,7 @@ class RVC2(ClassificationARD2):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 100, tol = 1e-2, n_iter_solver = 50, tol_solver = 1e-3,
+    def __init__(self, n_iter = 200, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC2,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,

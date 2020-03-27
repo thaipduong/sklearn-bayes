@@ -56,10 +56,10 @@ test_proportion = 0.1
 # create dataset & split into train/test parts
 #Xx,Yy   = make_circles(n_samples = n, noise = 0.2, random_state = 1)
 
-#uninflated_laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_uninflated.npz")
-#uninflated_laser_Xx = uninflated_laser_data['points']*0.5
-#uninflated_laser_Yy = uninflated_laser_data['labels']
-#uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
+uninflated_laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_uninflated.npz")
+uninflated_laser_Xx = uninflated_laser_data['points']*0.5
+uninflated_laser_Yy = uninflated_laser_data['labels']
+uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
 
 laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_good.npz")
 laser_Xx = laser_data['points']
@@ -72,14 +72,14 @@ laser_Yy_pos = laser_Yy[laser_Yy > 0]
 laser_Xx_pos = laser_Xx[laser_Yy > 0, :]
 pos_portion = sum(laser_Yy[laser_Yy > 0])
 neg_portion = len(laser_Yy) - pos_portion
-r = max(int(neg_portion/pos_portion), 0)
+#r = max(int(neg_portion/pos_portion), 0)
 
-for i in range(r):
-    laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
-    laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
+#for i in range(r):
+#    laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
+#    laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
 
 
-Xx = laser_Xx*0.25
+Xx = laser_Xx*0.5
 Yy = laser_Yy
 
 
@@ -99,7 +99,7 @@ Y = Yy[ind_list]
 
 
 # train rvm
-rvm = RVC2(kernel = 'rbf', gamma = 7.5)
+rvm = RVC2(n_iter = 100, kernel = 'rbf', gamma = 2.0)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
@@ -113,14 +113,19 @@ y_hat = rvm.predict(x)
 print classification_report(y,y_hat)
 
 # create grid
+#n_grid = 500
+#max_x      = 1.2*np.max(X,axis = 0)
+#min_x      = 1.2*np.min(X,axis = 0)
+#X1         = np.linspace(min_x[0],max_x[0],n_grid)
+#X2         = np.linspace(min_x[1],max_x[1],n_grid)
 n_grid = 500
-max_x      = 2*np.max(X,axis = 0)
-min_x      = 2*np.min(X,axis = 0)
-X1         = np.linspace(min_x[0],max_x[0],n_grid)
-X2         = np.linspace(min_x[1],max_x[1],n_grid)
-n_grid = 500
-max_x      = 2*np.max(X,axis = 0)
-min_x      = 2*np.min(X,axis = 0)
+max_x      = 1.5*np.max(X,axis = 0) - np.array([0.5, 1])
+min_x      = 1.5*np.min(X,axis = 0) - np.array([2, 4])
+
+
+min_x[1] = min_x[1]+1
+max_x[1] = max_x[1]-2
+
 X1         = np.linspace(min_x[0],max_x[0],n_grid)
 X2         = np.linspace(min_x[1],max_x[1],n_grid)
 x1,x2      = np.meshgrid(X1,X2)
@@ -131,8 +136,13 @@ Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
 #A = np.array([-1.1, 0.9])
 #B = np.array([0.0, -2.0])
-A = np.array([-4.0, 4.0])
-B = np.array([4.0, -4.0])
+A = np.array([0.0, 0.0])
+B = np.array([3.5, -0.8])
+#A = np.array([0.0, 0.0])
+#B = np.array([-7.5, 2.5])
+#A = np.array([0.0, 0.0])
+#B = np.array([3.5, 6.5])
+
 line_seg_x = np.linspace(A[0], B[0], 100)
 line_seg_y = np.linspace(A[1], B[1], 100)
 line_seg = np.vstack((line_seg_x, line_seg_y)).transpose()
@@ -146,51 +156,99 @@ upper_line6 = np.flip(upper_line6)
 upper_grid, upper_grid2, upper_grid3, upper_grid4 = rvm.predict_upperbound(Xgrid)
 upper_line7 = np.minimum(upper_line5, upper_line6)
 
-plt.figure(figsize=(12, 12))
+plt.figure(figsize=(12, 8))
 #plt.plot(rv_line[:,1] - 0.5, label="GT")
 a = np.where(upper_line7 >0)[0]
 
-THRESHOLD = -0.1
+THRESHOLD = -0.01
 gt = num - THRESHOLD*denom
-plt.plot(gt, label="GT")
-plt.plot(upper_line, label="upper bound 1", linestyle="dashed")
-plt.plot(upper_line2, label="Fastron bound", linestyle = "dotted")
-plt.plot(upper_line4, label="AM-GM bound",  linestyle="dotted")
+t = np.linspace(0,1, 100)
+plt.plot(t, gt, label="$G_1(x)$", linewidth=4)
+plt.plot(t, upper_line, label="$G_2(x)$", linestyle="dashed", linewidth=4)
+#plt.plot(upper_line2, label="Fastron bound", linestyle = "dotted")
+plt.plot(t, upper_line4, label="$G_3(x)$",  linestyle="dotted", linewidth=4)
 #plt.plot(upper_line7, label="triangle bound",  linestyle="dashdot")
 #plt.plot(upper_line6, label="triangle bound",  linestyle="dashdot")
-plt.plot(np.zeros(100), label="zero",  linestyle="dashdot")
-plt.legend()
+plt.plot(t, np.zeros(100), label="zero",  linestyle="dashdot", linewidth=4)
+ax = plt.axes()
+# Setting the background color
+ax.set_facecolor("lightgrey")
+plt.legend(fontsize = 20)
+plt.xticks(fontsize= 20)
+plt.yticks(fontsize= 20)
+plt.savefig("/home/erl/repos/sklearn-bayes/figs/bounds_free.pdf", bbox_inches='tight', pad_inches=0)
+
 rv_grid = rv_grid[:,1]
 #plt.show()
 
-plt.figure(figsize = (12,12))
-plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 6, label = 'free')
-plt.plot(X[Y==1,0],X[Y==1,1],"rs", markersize = 6, label = 'occupied')
+plt.figure(figsize = (12,8))
+
+plt.plot(X[Y==1,0],X[Y==1,1],"rs", markersize = 4, label = 'occupied')
+plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 4, label = 'free')
 ax = plt.axes()
 # Setting the background color
 ax.set_facecolor("lightgrey")
 plt.legend(fontsize = 20)
 plt.xticks(fontsize= 20)
 plt.yticks(fontsize= 20)
+plt.xlim(min_x[0],max_x[0])
+#plt.ylim(min_x[1]+4,max_x[1]-2)
+plt.ylim(min_x[1],max_x[1])
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/inflated_samples.pdf", bbox_inches='tight', pad_inches=0)
 #plt.show()
-'''
-plt.figure(figsize = (12,12))
-plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==0,0],uninflated_laser_Xx[uninflated_laser_Yy==0,1],"bo", markersize = 6, label = 'free')
-plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==1,0],uninflated_laser_Xx[uninflated_laser_Yy==1,1],"rs", markersize = 6, label = 'occupied')
+''''''
+plt.figure(figsize = (12,8))
+plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==0,0],uninflated_laser_Xx[uninflated_laser_Yy==0,1],"bo", markersize = 4, label = 'free')
+plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==1,0],uninflated_laser_Xx[uninflated_laser_Yy==1,1],"rs", markersize = 4, label = 'occupied')
 plt.legend(fontsize = 20)
 plt.xticks(fontsize= 20)
 plt.yticks(fontsize= 20)
 ax = plt.axes()
 # Setting the background color
 ax.set_facecolor("lightgrey")
+plt.xlim(min_x[0],max_x[0])
+#plt.ylim(min_x[1]+4,max_x[1]-2)
+plt.ylim(min_x[1],max_x[1])
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/uninflated_samples.pdf", bbox_inches='tight', pad_inches=0)
+
+
+
+''''''
+plt.figure(figsize = (12,8))
+levels = np.arange(0,1, 0.0005)
+plt.contourf(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), cmap='coolwarm')
+
+#bounds = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+#norm = plt.colors.Normalize(vmin=0, vmax=1)
+cb  = plt.colorbar()
+
+#cb.set_ticks(0.075 + np.array([0.0, 0.15, 0.3, 0.45, 0.60, 0.75, 0.90]))
+cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+cb.ax.tick_params(labelsize=20)
+plt.contour(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+svrv = rvm.relevant_vectors_[0]
+point_label = "relevant vec."
+
+
+
+cm = ['b' if cw < 0 else 'r' for cw in rvm.corrected_weights]
+plt.plot(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], 'ro', markersize=8, label="pos. " + point_label)
+plt.plot(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], 'bo', markersize=8,
+             label="neg. " + point_label)
+plt.xticks(fontsize=20)
+plt.yticks(fontsize=20)
+#plt.xlabel("x1", fontsize=20)
+#plt.ylabel("x2", fontsize=20)
+plt.xlim(min_x[0]+3,max_x[0]-2)
+#plt.ylim(min_x[1]+4,max_x[1]-2)
+plt.ylim(min_x[1],max_x[1])
+plt.legend(fontsize=20)
+plt.savefig("/home/erl/repos/sklearn-bayes/figs/rvm_models.pdf", bbox_inches='tight', pad_inches=0)
 plt.show()
-'''
+
+
 models  = [rv_grid, upper_grid, upper_grid2, upper_grid4]
 model_names = ["RVC", "upperbound", "upperbound_fastron", "upperbound AMGM"]
-
-
 #plt.plot(rvm.relevant_vectors_,Y[rvm.active_],"co",markersize = 12,  label = "relevant vectors")
 for model, model_name in zip(models, model_names):
     plt.figure(figsize = (12,8))
@@ -199,15 +257,21 @@ for model, model_name in zip(models, model_names):
     #                   linewidth=0, antialiased=False)
     plt.contourf(X1, X2, np.reshape(model, (n_grid, n_grid)), cmap='coolwarm')
     cb  = plt.colorbar()
-    cb.ax.tick_params(labelsize=15)
+    cb.ax.tick_params(labelsize=20)
     if model_name == "RVC":
-        plt.contour(X1, X2, np.reshape(upper_grid, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles="dashed")
-        plt.contour(X1, X2, np.reshape(upper_grid2, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles = "dotted")
+        cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+        arr1 = plt.arrow(0, 0,  3.5, 6.5, head_width=0.3,
+                         head_length=0.3, fc="xkcd:cyan", ec="xkcd:cyan", width = 0.1, label="colliding segment")
+        arr2 = plt.arrow(0, 0, 3.5, -0.8, head_width=0.3,
+                         head_length=0.3, fc="xkcd:orange", ec="xkcd:orange", width=0.1, label="free segment")
+        cs2 = plt.contour(X1, X2, np.reshape(upper_grid, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles="dashed", label="$G_2(x)$")
+        #plt.contour(X1, X2, np.reshape(upper_grid2, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles = "dotted", label="$G_2(x)$")
         #plt.contour(X1, X2, np.reshape(upper_grid3, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
         #            linestyles="solid")
-        plt.contour(X1, X2, np.reshape(upper_grid4, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
-                    linestyles="dashdot")
-        plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+        cs3 = plt.contour(X1, X2, np.reshape(upper_grid4, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+                    linestyles="dashdot", label="$G_3(x)$")
+        cs1 = plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.4945], cmap="Greys_r", label="$G_1(x)$")
+
     else:
         plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r")
 
@@ -222,20 +286,29 @@ for model, model_name in zip(models, model_names):
         svrv = rvm.relevant_vectors_[0]
         point_label = "relevant vecs"
     cm = ['b' if cw < 0 else 'r' for cw in rvm.corrected_weights]
-    plt.plot(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], 'ro', markersize=8, label=point_label)
-    plt.plot(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], 'bo', markersize=8,
-             label=point_label)
+    pos_rv = plt.scatter(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], color = 'r', s = 60)
+    neg_rv = plt.scatter(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], color = 'b', s = 60)
+
     print("All relevance vectors")
     for i in range(len(rvm.corrected_weights)):
         print(i, rvm.orig_weights[i], rvm.corrected_weights[i], svrv[i,:])
     #plt.plot(traj[:,0], traj[:,1],'go',markersize=4)
     # plt.plot()
-    plt.plot()
-    title = model_name
-    plt.title(title, fontsize = 20)
-    plt.xticks(fontsize=15)
-    plt.yticks(fontsize=15)
-    plt.xlabel("x1", fontsize = 20)
-    plt.ylabel("x2", fontsize = 20)
-    plt.legend()
+    #plt.plot()
+    #title = model_name
+    #plt.title(title, fontsize = 20)
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
+    #plt.xlabel("x1", fontsize = 20)
+    #plt.ylabel("x2", fontsize = 20)
+
+    if model_name == "RVC":
+        h1, _ = cs1.legend_elements()
+        h2, _ = cs2.legend_elements()
+        h3, _ = cs3.legend_elements()
+        plt.legend([pos_rv, neg_rv, h1[0], h2[0], h3[0],arr1, arr2 ], \
+                   ['pos. vec.', 'neg. vec.', '$G_1(x) = 0$', '$G_2(x) = 0$', '$G_3(x) = 0$', 'line 1', 'line 2'], loc = 2, fontsize=20,framealpha=0.5)
+        plt.savefig("/home/erl/repos/sklearn-bayes/figs/rvm_model_lines.pdf", bbox_inches='tight', pad_inches=0)
+    else:
+        plt.legend(fontsize=20, loc=2)
 plt.show()
