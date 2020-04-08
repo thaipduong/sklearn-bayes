@@ -32,7 +32,7 @@ print("All test are passed ...")
 # ## Relevance Vector Regression
 
 from sklearn.utils.estimator_checks import check_estimator
-from skbayes.rvm_ard_models import RegressionARD2,ClassificationARD2,RVR2,RVC2
+from skbayes.rvm_ard_models import RegressionARD3,ClassificationARD3,RVR3,RVC3, RVSet
 from sklearn.svm import SVR
 from sklearn.model_selection import GridSearchCV
 import numpy as np
@@ -61,9 +61,13 @@ test_proportion = 0.1
 #uninflated_laser_Yy = uninflated_laser_data['labels']
 #uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
 
-laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples.npz")
-laser_Xx = laser_data['points']
-laser_Yy = laser_data['labels']
+laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz", allow_pickle=True)
+
+label_seq = laser_data['label_seg']
+point_seq = laser_data['point_seq']
+
+laser_Yy = np.array(label_seq[0])
+laser_Xx = np.array(point_seq[0])
 laser_Yy[laser_Yy < 0] = 0
 
 
@@ -99,17 +103,22 @@ Y = Yy[ind_list]
 
 
 # train rvm
-rvm = RVC2(n_iter = 1000, kernel = 'rbf', gamma = 2)
+rvm = RVC3(n_iter = 1000, kernel = 'rbf', gamma = 2)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
 rvm_time = t2 - t1
 print "RVC time:" + str(rvm_time)
 
+
+# Saved trained model
+RVMMap = RVSet(rvm.relevant_vectors_, rvm.coef_[:,rvm.active_[0]],  rvm.sigma_, rvm.classes_, fixed_intercept=rvm.intercept_, kernel = 'rbf', gamma = 2)
+
 rvecs = np.sum(rvm.active_[0]==True)
 rvm_message = " ====  RVC: time {0}, relevant vectors = {1} \n".format(rvm_time,rvecs)
 print rvm_message
-y_hat = rvm.predict(x)
+y_hat = RVMMap.predict(x)
+#y_hat2 = rvm.predict(x)
 print classification_report(y,y_hat)
 
 # create grid
@@ -133,7 +142,7 @@ Xgrid      = np.zeros([n_grid**2,2])
 Xgrid[:,0] = np.reshape(x1,(n_grid**2,))
 Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 
-rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
+rv_grid, var_grid, _, _ = RVMMap.predict_proba(Xgrid)
 #A = np.array([-1.1, 0.9])
 #B = np.array([0.0, -2.0])
 A = np.array([0.0, 0.0])
@@ -147,13 +156,13 @@ line_seg_x = np.linspace(A[0], B[0], 100)
 line_seg_y = np.linspace(A[1], B[1], 100)
 line_seg = np.vstack((line_seg_x, line_seg_y)).transpose()
 
-upper_line, upper_line2, upper_line3, upper_line4 = rvm.predict_upperbound(line_seg)
-rv_line, var_line, num, denom = rvm.predict_proba(line_seg)
-upper_line5 = rvm.predict_upperbound_line(line_seg, A)
+upper_line, upper_line2, upper_line3, upper_line4 = RVMMap.predict_upperbound(line_seg)
+rv_line, var_line, num, denom = RVMMap.predict_proba(line_seg)
+upper_line5 = RVMMap.predict_upperbound_line(line_seg, A)
 line_seg_rev = np.flipud(line_seg)
-upper_line6 = rvm.predict_upperbound_line(line_seg_rev, B)
+upper_line6 = RVMMap.predict_upperbound_line(line_seg_rev, B)
 upper_line6 = np.flip(upper_line6)
-upper_grid, upper_grid2, upper_grid3, upper_grid4 = rvm.predict_upperbound(Xgrid)
+upper_grid, upper_grid2, upper_grid3, upper_grid4 = RVMMap.predict_upperbound(Xgrid)
 upper_line7 = np.minimum(upper_line5, upper_line6)
 
 plt.figure(figsize=(12, 8))
@@ -226,14 +235,14 @@ cb  = plt.colorbar()
 cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
 cb.ax.tick_params(labelsize=20)
 plt.contour(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
-svrv = rvm.relevant_vectors_[0]
+svrv = RVMMap.relevant_vectors_[0]
 point_label = "relevant vec."
 
 
 
-cm = ['b' if cw < 0 else 'r' for cw in rvm.corrected_weights]
-plt.plot(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], 'ro', markersize=8, label="pos. " + point_label)
-plt.plot(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], 'bo', markersize=8,
+cm = ['b' if cw < 0 else 'r' for cw in RVMMap.corrected_weights]
+plt.plot(svrv[RVMMap.corrected_weights>0, 0], svrv[RVMMap.corrected_weights>0, 1], 'ro', markersize=8, label="pos. " + point_label)
+plt.plot(svrv[RVMMap.corrected_weights < 0, 0], svrv[RVMMap.corrected_weights < 0, 1], 'bo', markersize=8,
              label="neg. " + point_label)
 plt.xticks(fontsize=20)
 plt.yticks(fontsize=20)
@@ -283,15 +292,15 @@ for model, model_name in zip(models, model_names):
         svrv = svc.best_estimator_.support_vectors_
         point_label = "support vecs"
     else:
-        svrv = rvm.relevant_vectors_[0]
+        svrv = RVMMap.relevant_vectors_[0]
         point_label = "relevant vecs"
-    cm = ['b' if cw < 0 else 'r' for cw in rvm.corrected_weights]
-    pos_rv = plt.scatter(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], color = 'r', s = 60)
-    neg_rv = plt.scatter(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], color = 'b', s = 60)
+    cm = ['b' if cw < 0 else 'r' for cw in RVMMap.corrected_weights]
+    pos_rv = plt.scatter(svrv[RVMMap.corrected_weights>0, 0], svrv[RVMMap.corrected_weights>0, 1], color = 'r', s = 60)
+    neg_rv = plt.scatter(svrv[RVMMap.corrected_weights < 0, 0], svrv[RVMMap.corrected_weights < 0, 1], color = 'b', s = 60)
 
     print("All relevance vectors")
-    for i in range(len(rvm.corrected_weights)):
-        print(i, rvm.orig_weights[i], rvm.corrected_weights[i], svrv[i,:])
+    for i in range(len(RVMMap.corrected_weights)):
+        print(i, RVMMap.orig_weights[i], RVMMap.corrected_weights[i], svrv[i,:])
     #plt.plot(traj[:,0], traj[:,1],'go',markersize=4)
     # plt.plot()
     #plt.plot()

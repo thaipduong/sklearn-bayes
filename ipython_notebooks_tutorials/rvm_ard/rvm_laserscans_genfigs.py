@@ -56,12 +56,12 @@ test_proportion = 0.1
 # create dataset & split into train/test parts
 #Xx,Yy   = make_circles(n_samples = n, noise = 0.2, random_state = 1)
 
-#uninflated_laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_uninflated.npz")
-#uninflated_laser_Xx = uninflated_laser_data['points']*0.5
-#uninflated_laser_Yy = uninflated_laser_data['labels']
-#uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
+uninflated_laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_uninflated.npz")
+uninflated_laser_Xx = uninflated_laser_data['points']*0.5
+uninflated_laser_Yy = uninflated_laser_data['labels']
+uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
 
-laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples.npz")
+laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_good.npz")
 laser_Xx = laser_data['points']
 laser_Yy = laser_data['labels']
 laser_Yy[laser_Yy < 0] = 0
@@ -72,14 +72,14 @@ laser_Yy_pos = laser_Yy[laser_Yy > 0]
 laser_Xx_pos = laser_Xx[laser_Yy > 0, :]
 pos_portion = sum(laser_Yy[laser_Yy > 0])
 neg_portion = len(laser_Yy) - pos_portion
-r = max(int(neg_portion/pos_portion), 0)
+#r = max(int(neg_portion/pos_portion), 0)
 
-for i in range(r):
-    laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
-    laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
+#for i in range(r):
+#    laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
+#    laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
 
 
-Xx = laser_Xx*0.25
+Xx = laser_Xx*0.5
 Yy = laser_Yy
 
 
@@ -99,7 +99,7 @@ Y = Yy[ind_list]
 
 
 # train rvm
-rvm = RVC2(n_iter = 1000, kernel = 'rbf', gamma = 2)
+rvm = RVC2(n_iter = 100, kernel = 'rbf', gamma = 2.0)
 t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
@@ -183,8 +183,8 @@ rv_grid = rv_grid[:,1]
 
 plt.figure(figsize = (12,8))
 
-plt.plot(X[Y==1,0],X[Y==1,1],"rs", markersize = 2, label = 'occupied')
-plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 2, label = 'free')
+plt.plot(X[Y==1,0],X[Y==1,1],"rs", markersize = 4, label = 'occupied')
+plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 4, label = 'free')
 ax = plt.axes()
 # Setting the background color
 ax.set_facecolor("lightgrey")
@@ -196,7 +196,7 @@ plt.xlim(min_x[0],max_x[0])
 plt.ylim(min_x[1],max_x[1])
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/inflated_samples.pdf", bbox_inches='tight', pad_inches=0)
 #plt.show()
-'''
+''''''
 plt.figure(figsize = (12,8))
 plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==0,0],uninflated_laser_Xx[uninflated_laser_Yy==0,1],"bo", markersize = 4, label = 'free')
 plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==1,0],uninflated_laser_Xx[uninflated_laser_Yy==1,1],"rs", markersize = 4, label = 'occupied')
@@ -210,7 +210,7 @@ plt.xlim(min_x[0],max_x[0])
 #plt.ylim(min_x[1]+4,max_x[1]-2)
 plt.ylim(min_x[1],max_x[1])
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/uninflated_samples.pdf", bbox_inches='tight', pad_inches=0)
-'''
+
 
 
 ''''''
