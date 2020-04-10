@@ -26,7 +26,7 @@ UNKNOWN_PROB = -0.05
 #TODO: predict_proba for RVC with Laplace Approximation
 
 
-def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias):
+def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias, skip = 0):
     '''
     Selects one feature to be added/recomputed/deleted to model based on 
     effect it will have on value of log marginal likelihood.
@@ -58,7 +58,7 @@ def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias):
     deltaL            = deltaL  / n_samples
     
     # find feature which caused largest change in likelihood
-    feature_index = np.argmax(deltaL)
+    feature_index = skip + np.argmax(deltaL[skip:])
              
     # no deletions or additions
     same_features  = np.sum( theta[~recompute] > 0) == 0
@@ -482,6 +482,8 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         self.fit_intercept      = fit_intercept
         self.fixed_intercept = fixed_intercept
         self.verbose            = verbose
+        self.relevant_vectors = None
+        self.prev_trained = False
     
     
     def fit(self,X,y):
@@ -501,7 +503,11 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         self : object
             Returns self.
         '''
+
+
+
         X, y = check_X_y(X, y, accept_sparse = False, dtype=np.float64)
+
         # normalize, if required
         if self.normalize:
             self._x_mean = np.mean(X,0)
@@ -529,7 +535,12 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             self.intercept_ , self.active_ = [0]*n_classes, [0]*n_classes
             self.lambda_                   = [0]*n_classes
         else:
-            self.coef_, self.sigma_, self.intercept_,self.active_ = [0],[0],[0],[0]
+            if self.prev_trained:  # i.e. there is an existing model trained previously.
+                self.prev_sigma = self.sigma_
+                self.prev_mu = self.coef_[0][self.active_[0]]
+                self.prev_rvcount = len(self.prev_mu)
+                self.prev_A = self.lambda_[0][self.active_[0]]
+            self.coef_, self.sigma_, self.intercept_,self.active_ = [0],[[0]],[0],[0]
             self.lambda_                                          = [0]
          
         for i in range(len(self.classes_)):
@@ -548,6 +559,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
                 break  
         self.coef_      = np.asarray(self.coef_)
         self.intercept_ = np.asarray(self.intercept_)
+        self.prev_trained = True
         return self
         
     
@@ -558,13 +570,22 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         n_samples,n_features = X.shape
         A         = np.PINF * np.ones(n_features)
         active    = np.zeros(n_features , dtype = np.bool)
-        
+
+        if self.prev_trained: # i.e. there is an existing model trained previously.
+            active[0:self.prev_rvcount] = True
+            A[0:self.prev_rvcount] = self.prev_A
+            #active[self.prev_rvcount] = True
+            #A[self.prev_rvcount] = 1e-3
+            #self.prev_sigma = self.sigma_
+            #self.prev_mu = self.coef_[0][self.active_[0]]
+        else:
+            active[0] = True
+            A[0] = 1e-3  # np.finfo(np.float16).eps
         # if we fit intercept, make it active from the beginning
         #if self.fit_intercept:
         #    active[0] = True
         #    A[0]      = np.finfo(np.float16).eps
-        active[0] = True
-        A[0] = 1e-3 #np.finfo(np.float16).eps
+
 
         warning_flag = 0
         start = time.time()
@@ -576,6 +597,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
 
             # mean & precision of posterior distribution
             Mn,Sn,B,t_hat, cholesky = self._posterior_dist(Xa,y, Aa)
+
             cur = time.time()
             print("___fit ", i, "(approximation) = ", cur - start)
             if not cholesky:
@@ -593,7 +615,8 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             print("___fit ", i, "(SQ) = ", cur - start)
             # update precision parameters of coefficients
             #print self.tol
-            A,converged  = update_precisions(Q,S,q,s,A,active,self.tol,n_samples,self.fit_intercept)
+            skip = self.prev_rvcount if self.prev_trained else 0
+            A,converged  = update_precisions(Q,S,q,s,A,active,self.tol,n_samples,self.fit_intercept, skip=skip)
             cur = time.time()
             print("___fit ", i, "(update alpha) = ", cur - start)
             # terminate if converged
@@ -614,7 +637,9 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
                Mn          = Mn[1:]               
            active          = active[1:]
         coef_           = np.zeros([1,n_features])
-        coef_[0,active] = Mn   
+        coef_[0,active] = Mn
+        if self.prev_trained:
+            Sn[0:self.prev_rvcount, 0:self.prev_rvcount] = self.prev_sigma[0]
         return coef_.squeeze(), intercept_, active, Sn, A
    
         
@@ -752,12 +777,19 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         '''
         f = lambda w: _gaussian_cost_grad(X, y, w, A)
         w_init = np.random.random(X.shape[1])
+        if self.prev_trained:
+            w_init[0:self.prev_rvcount] = self.prev_mu
+            if len(self.prev_mu) != self.prev_rvcount:
+                print(len(self.prev_mu), self.prev_rvcount)
+                print(self.prev_sigma.shape)
         # print w_init.shape
         # print X.shape
         ##print y.shape
         # print A.shape
         Mn = fmin_l_bfgs_b(f, x0=w_init, pgtol=self.tol_solver,
                            maxiter=self.n_iter_solver)[0]
+        if self.prev_trained:
+            Mn[0:self.prev_rvcount] = self.prev_mu
         Xm_nobias = np.dot(X, Mn)
         Xm = Xm_nobias + self.fixed_intercept
         s = norm.cdf(Xm)
@@ -1063,6 +1095,11 @@ class RVC3(ClassificationARD3):
         self: object
            self
         '''
+
+        if self.prev_trained:
+            X = np.vstack((self.relevant_vectors_[0], X))
+            y = np.hstack((self.rv_labels[0], y))
+
         X,y = check_X_y(X,y, accept_sparse = False, dtype = np.float64)
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
@@ -1072,8 +1109,10 @@ class RVC3(ClassificationARD3):
         self.relevant_  = [np.where(active==True)[0] for active in self.active_]
         if X.ndim == 1:
             self.relevant_vectors_ = [ X[relevant_] for relevant_ in self.relevant_]
+            self.rv_labels = [ y[relevant_] for relevant_ in self.relevant_]
         else:
             self.relevant_vectors_ = [ X[relevant_,:] for relevant_ in self.relevant_ ]
+            self.rv_labels = [y[relevant_] for relevant_ in self.relevant_]
         return self
 
     def decision_function(self, X):
