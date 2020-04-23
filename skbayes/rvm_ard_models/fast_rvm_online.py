@@ -799,9 +799,9 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             Mn[0:self.prev_rvcount] = self.prev_mu
         Xm_nobias = np.dot(X, Mn)
         Xm = Xm_nobias + self.fixed_intercept
-        s = norm.cdf(Xm)
+        #s = norm.cdf(Xm)
         t = (y - 0.5) * 2
-        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-300
+        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) #+ 1e-300
         B = eta * (Xm_nobias + eta)
         # B         = logistic._pdf(Xm) # avoids underflow
         S = np.dot(X.T * B, X)
@@ -1072,7 +1072,7 @@ class RVC3(ClassificationARD3):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 200, tol = 1e-3, n_iter_solver = 30, tol_solver = 1e-3,
+    def __init__(self, n_iter = 200, tol = 1e-2, n_iter_solver = 30, tol_solver = 1e-3,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC3,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
