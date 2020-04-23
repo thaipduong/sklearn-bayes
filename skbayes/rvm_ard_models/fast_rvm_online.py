@@ -801,7 +801,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         Xm = Xm_nobias + self.fixed_intercept
         #s = norm.cdf(Xm)
         t = (y - 0.5) * 2
-        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) #+ 1e-300
+        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-300
         B = eta * (Xm_nobias + eta)
         # B         = logistic._pdf(Xm) # avoids underflow
         S = np.dot(X.T * B, X)

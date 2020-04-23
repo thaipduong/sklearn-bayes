@@ -65,7 +65,7 @@ laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz",
 
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
-rvm = RVC3(n_iter = 50, kernel = 'rbf', gamma = 1.8)
+rvm = RVC3(n_iter = 100, kernel = 'rbf', gamma = 2.5)
 #fig, ax = plt.subplots(figsize=(12,6))
 #fig2, ax2 = plt.subplots(figsize=(12,6))
 fig = plt.figure(figsize=(12,12))
