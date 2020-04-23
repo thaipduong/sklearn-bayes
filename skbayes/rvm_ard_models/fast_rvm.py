@@ -66,8 +66,8 @@ def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias):
     converged = False
     if same_features and no_delta:
         converged = True
-        print "Converge!"
-        print sum(abs( Anew - Arec )), tol
+        print("Converge!")
+        print(sum(abs( Anew - Arec )), tol)
         return [A,converged]
     
     # if not converged update precision parameter of weights and return
@@ -456,7 +456,7 @@ class ClassificationARD(BaseEstimator,LinearClassifierMixin):
                  tol_solver=1e-2, fit_intercept=True, verbose=False):
         self.n_iter             = n_iter
         self.tol                = tol
-        print "Init ", self.tol
+        print("Init ", self.tol)
         self.n_iter_solver      = n_iter_solver
         self.normalize          = normalize
         self.tol_solver         = tol_solver
@@ -1014,7 +1014,7 @@ class RVC(ClassificationARD):
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
                                  fit_intercept,verbose)
-        print "Init RVC", self.tol
+        print("Init RVC", self.tol)
         self.kernel        = kernel
         self.degree        = degree
         self.gamma         = gamma

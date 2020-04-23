@@ -61,17 +61,26 @@ test_proportion = 0.1
 #uninflated_laser_Yy = uninflated_laser_data['labels']
 #uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
 
-laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz", allow_pickle=True)
+laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz", allow_pickle=True,  encoding='latin1')
 
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
-rvm = RVC3(n_iter = 100, kernel = 'rbf', gamma = 2)
-fig, ax = plt.subplots()
-
-for i in range(0,50):#len(label_seq)):
-    print("i = ", i)
-    laser_Yy = np.array(label_seq[i])
-    laser_Xx = np.array(point_seq[i])
+rvm = RVC3(n_iter = 100, kernel = 'rbf', gamma = 1.8)
+#fig, ax = plt.subplots(figsize=(12,6))
+#fig2, ax2 = plt.subplots(figsize=(12,6))
+fig = plt.figure(figsize=(12,12))
+ax = fig.add_subplot(211)
+ax2 = fig.add_subplot(212)
+for d in range(0,50, 5):#[0, 10]: #len(label_seq)):
+    ax.clear()
+    ax2.clear()
+    ax2.set_xlim(-10, 27)
+    ax.set_xlim(-10, 27)
+    ax2.set_ylim(-5, 12)
+    ax.set_ylim(-5, 12)
+    print("d = ", d)
+    laser_Yy = np.array(label_seq[d])
+    laser_Xx = np.array(point_seq[d])
     laser_Yy[laser_Yy < 0] = 0
 
 
@@ -113,19 +122,26 @@ for i in range(0,50):#len(label_seq)):
     #rvm.fit(X,Y)
     t2 = time.time()
     rvm_time = t2 - t1
-    print "RVC time:" + str(rvm_time)
+    print("RVC time:" + str(rvm_time))
     rvecs = np.sum(rvm.active_[0] == True)
     rvm_message = " ====  RVC: time {0}, relevant vectors = {1} \n".format(rvm_time, rvecs)
-    print rvm_message
+    print(rvm_message)
     y_hat = rvm.predict(x)
-    print classification_report(y, y_hat)
+    print(classification_report(y, y_hat))
     print(rvm.sigma_[0].shape)
     print(len(rvm.relevant_vectors_[0]))
 
-    ax.plot(X[Y == 0, 0], X[Y == 0, 1], "bo", markersize=5)
-    ax.plot(X[Y == 1, 0], X[Y == 1, 1], "ro", markersize=5)
+    ax.plot(X[Y == 0, 0], X[Y == 0, 1], "bo", markersize=3)
+    ax.plot(X[Y == 1, 0], X[Y == 1, 1], "ro", markersize=3)
+    #plt.pause(1)
+    #ax.clear()
+    svrv = rvm.relevant_vectors_[0]
+    w = rvm.coef_[0][rvm.active_[0]]
+    pos_rv = ax2.scatter(svrv[w>0, 0], svrv[w>0, 1], color = 'r', s = 60)
+    neg_rv = ax2.scatter(svrv[w < 0, 0], svrv[w < 0, 1], color = 'b', s = 60)
     plt.pause(1)
-    ax.clear()
+    fig.savefig("/home/erl/repos/sklearn-bayes/figs/data_rvs"+str(d)+".png", bbox_inches='tight', pad_inches=0)
+    #fig2.savefig("/home/erl/repos/sklearn-bayes/figs/rvs"+str(d)+".png", bbox_inches='tight', pad_inches=0)
     print("######################################")
 
 plt.show()
@@ -144,8 +160,8 @@ plt.show()
 #X1         = np.linspace(min_x[0],max_x[0],n_grid)
 #X2         = np.linspace(min_x[1],max_x[1],n_grid)
 n_grid = 500
-max_x      = 10*np.max(X,axis = 0)
-min_x      = 10*np.min(X,axis = 0)
+max_x      = np.array([27,12])#10*np.max(X,axis = 0)
+min_x      = np.array([-10,-5])#10*np.min(X,axis = 0)
 
 
 X1         = np.linspace(min_x[0],max_x[0],n_grid)

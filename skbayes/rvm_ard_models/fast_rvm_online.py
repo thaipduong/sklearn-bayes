@@ -19,6 +19,7 @@ from numpy import linalg as LA
 import scipy.sparse
 import warnings
 import time
+from numbers import Number
 
 INTERCEPT = False
 THRESHOLD = -0.01
@@ -61,7 +62,7 @@ def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias, skip = 0):
     feature_index = skip + np.argmax(deltaL[skip:])
              
     # no deletions or additions
-    same_features  = np.sum( theta[~recompute] > 0) == 0
+    same_features  = np.sum( theta[~recompute] > 0) == 0 #False #
     
     # changes in precision for features already in model is below threshold
     no_delta       = np.sum( abs( Anew - Arec ) > tol ) == 0
@@ -71,8 +72,8 @@ def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias, skip = 0):
     converged = False
     if same_features and no_delta:
         converged = True
-        print "Converge!"
-        print sum(abs( Anew - Arec )), tol
+        print("Converge!")
+        #print(sum(abs( Anew - Arec )), tol)
         return [A,converged]
     
     # if not converged update precision parameter of weights and return
@@ -475,7 +476,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
                  tol_solver=1e-2, fit_intercept=INTERCEPT, fixed_intercept =UNKNOWN_PROB, verbose=False):
         self.n_iter             = n_iter
         self.tol                = tol
-        print "Init ", self.tol
+        print("Init ", self.tol)
         self.n_iter_solver      = n_iter_solver
         self.normalize          = normalize
         self.tol_solver         = tol_solver
@@ -574,8 +575,8 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         if self.prev_trained: # i.e. there is an existing model trained previously.
             active[0:self.prev_rvcount] = True
             A[0:self.prev_rvcount] = self.prev_A
-            #active[self.prev_rvcount] = True
-            #A[self.prev_rvcount] = 1e-3
+            active[self.prev_rvcount] = True
+            A[self.prev_rvcount] = 1
             #self.prev_sigma = self.sigma_
             #self.prev_mu = self.coef_[0][self.active_[0]]
         else:
@@ -591,7 +592,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         start = time.time()
         for i in range(self.n_iter):
             cur = time.time()
-            print("___fit ", i, " = ", cur - start)
+            #print("___fit ", i, " = ", cur - start)
             Xa      =  X[:,active]
             Aa      =  A[active]
 
@@ -599,7 +600,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             Mn,Sn,B,t_hat, cholesky = self._posterior_dist(Xa,y, Aa)
 
             cur = time.time()
-            print("___fit ", i, "(approximation) = ", cur - start)
+            #print("___fit ", i, "(approximation) = ", cur - start)
             if not cholesky:
                 warning_flag += 1
             
@@ -608,23 +609,29 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
                 warnings.warn(("Cholesky decomposition failed ! Algorithm uses pinvh, "
                                "which is significantly slower, if you use RVC it "
                                "is advised to change parameters of kernel"))
-
+            #if self.prev_trained:
+            #    if cholesky:
+            #        Sn2 = np.dot(Sn.T, Sn)
+            #        Sn2[0:self.prev_rvcount, 0:self.prev_rvcount] = self.prev_sigma[0]
+            #        Sn = np.linalg.cholesky(Sn2)
             # compute quality & sparsity parameters
             s,q,S,Q = self._sparsity_quality(X,Xa,t_hat,B,A,Aa,active,Sn,cholesky)
             cur = time.time()
-            print("___fit ", i, "(SQ) = ", cur - start)
+            #print("___fit ", i, "(SQ) = ", cur - start)
             # update precision parameters of coefficients
             #print self.tol
             skip = self.prev_rvcount if self.prev_trained else 0
             A,converged  = update_precisions(Q,S,q,s,A,active,self.tol,n_samples,self.fit_intercept, skip=skip)
             cur = time.time()
-            print("___fit ", i, "(update alpha) = ", cur - start)
+            #print("___fit ", i, "(update alpha) = ", cur - start)
             # terminate if converged
             if converged or i == self.n_iter - 1:
                 break
         
         Xa,Aa   = X[:,active], A[active]
-        Mn,Sn,B,t_hat,cholesky = self._posterior_dist(Xa,y,Aa)
+        Xa = Xa[active,:]
+        ya = y[active]
+        Mn,Sn,B,t_hat,cholesky = self._posterior_dist(Xa,ya,Aa, keep_prev_mean = False)
         # in case Sn is inverse of lower triangular matrix of Cholesky decomposition
         # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
         if cholesky:
@@ -638,8 +645,8 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
            active          = active[1:]
         coef_           = np.zeros([1,n_features])
         coef_[0,active] = Mn
-        if self.prev_trained:
-            Sn[0:self.prev_rvcount, 0:self.prev_rvcount] = self.prev_sigma[0]
+        #if self.prev_trained:
+        #    Sn[0:self.prev_rvcount, 0:self.prev_rvcount] = self.prev_sigma[0]
         return coef_.squeeze(), intercept_, active, Sn, A
    
         
@@ -771,7 +778,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         si[active] = Aa * Sa / (Aa - Sa)
         return [si, qi, S, Q]
 
-    def _posterior_dist(self, X, y, A):
+    def _posterior_dist(self, X, y, A, keep_prev_mean = True):
         '''
         Uses Laplace approximation for calculating posterior distribution
         '''
@@ -788,13 +795,13 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         # print A.shape
         Mn = fmin_l_bfgs_b(f, x0=w_init, pgtol=self.tol_solver,
                            maxiter=self.n_iter_solver)[0]
-        if self.prev_trained:
+        if self.prev_trained and keep_prev_mean:
             Mn[0:self.prev_rvcount] = self.prev_mu
         Xm_nobias = np.dot(X, Mn)
         Xm = Xm_nobias + self.fixed_intercept
         s = norm.cdf(Xm)
         t = (y - 0.5) * 2
-        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t)# + 1e-200
+        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-300
         B = eta * (Xm_nobias + eta)
         # B         = logistic._pdf(Xm) # avoids underflow
         S = np.dot(X.T * B, X)
@@ -1065,17 +1072,19 @@ class RVC3(ClassificationARD3):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 200, tol = 1e-5, n_iter_solver = 100, tol_solver = 1e-5,
+    def __init__(self, n_iter = 200, tol = 1e-3, n_iter_solver = 30, tol_solver = 1e-3,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC3,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
                                  fit_intercept, fixed_intercept, verbose)
-        print "Init RVC", self.tol
+        print("Init RVC", self.tol)
         self.kernel        = kernel
         self.degree        = degree
         self.gamma         = gamma
         self.coef0         = coef0
         self.kernel_params = kernel_params
+        self.prev_X = None
+        self.prev_y = None
         
         
     def fit(self,X,y):
@@ -1095,12 +1104,42 @@ class RVC3(ClassificationARD3):
         self: object
            self
         '''
-
+        X_orig = np.copy(X)
+        y_orig = np.copy(y)
         if self.prev_trained:
-            X = np.vstack((self.relevant_vectors_[0], X))
-            y = np.hstack((self.rv_labels[0], y))
+            xa = X[0,:].tolist()
+            xa2 = X[0, :]
+            a = [7.75, -10.0] not in self.prev_X
+            Xdiff = np.array([X[i,:] if X[i,:].tolist() not in self.prev_X else None for i in range(len(X))]) #np.setdiff1d(X, self.prev_X)
+            ydiff = np.array([y[i] if X[i, :].tolist() not in self.prev_X else None for i in range(len(X))])
+            Xdiff = Xdiff[ydiff != None]
+            ydiff = ydiff[ydiff != None]
+            if len(ydiff) > 0:
+                print("New data")
+            else:
+                print("Data is the same! Skip...")
+                self.prev_X = X_orig
+                self.prev_y = y_orig
+                return self
+            newdatalen = len(Xdiff)
+            Xdiff = np.concatenate(Xdiff).reshape((newdatalen,2))
+            ydiff = ydiff.astype(np.int64)
+            ydiff_pos = ydiff[ydiff > 0]
+            Xdiff_pos = Xdiff[ydiff > 0, :]
+            pos_portion = sum(ydiff[ydiff > 0])
+            neg_portion = len(ydiff) - pos_portion
+            if (pos_portion > 0):
+                r = max(int(neg_portion / pos_portion), 0)
+                for i in range(r):
+                    Xdiff = np.vstack((Xdiff, Xdiff_pos))
+                    ydiff = np.hstack((ydiff, ydiff_pos))
+            X = np.vstack((self.relevant_vectors_[0], Xdiff))
+            y = np.hstack((self.rv_labels[0], ydiff))
+            #X = np.vstack((self.relevant_vectors_[0], X_orig))
+            #y = np.hstack((self.rv_labels[0], y_orig))
 
         X,y = check_X_y(X,y, accept_sparse = False, dtype = np.float64)
+
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
                        self.kernel, self.kernel_params)
@@ -1113,6 +1152,9 @@ class RVC3(ClassificationARD3):
         else:
             self.relevant_vectors_ = [ X[relevant_,:] for relevant_ in self.relevant_ ]
             self.rv_labels = [y[relevant_] for relevant_ in self.relevant_]
+
+        self.prev_X = X_orig.tolist()
+        self.prev_y = y_orig.tolist()
         return self
 
     def decision_function(self, X):
@@ -1221,6 +1263,8 @@ class RVC3(ClassificationARD3):
            Estimated probabilities of target classes
         '''
         decision, var = self.decision_function(X)
+        #print("Decision value!!!!!!!!!!!!!!!", decision)
+        #print("Var value!!!!!!!!!!!!!!!", var)
         prob = norm.cdf(decision / np.sqrt(var + 1))
         if prob.ndim == 1:
             prob = np.vstack([1 - prob, prob]).T
