@@ -592,7 +592,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         start = time.time()
         for i in range(self.n_iter):
             cur = time.time()
-            #print("___fit ", i, " = ", cur - start)
+            print("___fit ", i, " = ", cur - start)
             Xa      =  X[:,active]
             Aa      =  A[active]
 
@@ -749,19 +749,30 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         '''
         Calculates sparsity & quality parameters for each feature
         '''
+        cur1 = time.time()
         XB = X.T * B
         #XB2 = np.matmul(X.T,np.diag(B))
         #Xdiff = XB - XB2
-        bxx = np.dot(B, X ** 2)
+        bxx = np.matmul(B, X ** 2)
         #bxx2 = np.sum(XB*X.T,1)
-        bxy = np.dot(XB, y)
+        bxy = np.matmul(XB, y)
         YB = y * B
+        cur2 = time.time()
+        #print("_____sparsity___cur2_____fit ", cur2 - cur1)
         if cholesky:
             # Here Sn is inverse of lower triangular matrix, obtained from
             # cholesky decomposition
-            XBX = np.dot(XB, Xa)
-            XBXS = np.dot(XBX, Sn.T)
-            SXBY = np.dot(Sn, np.dot(Xa.T,YB))
+            XB.astype(np.float32)
+            Xa.astype(np.float32)
+            XBX = np.matmul(XB, Xa)
+            cur21 = time.time()
+            #print("_______________cholesky___cur21_____fit ", cur21 - cur2)
+            XBXS = np.matmul(XBX, Sn.T)
+            cur22 = time.time()
+            #print("_______________cholesky___cur22_____fit ", cur22 - cur21)
+            SXBY = np.matmul(Sn, np.matmul(Xa.T,YB))
+            cur23 = time.time()
+            #print("_______________cholesky___cur23_____fit ", cur23 - cur22)
             S = bxx - np.sum(XBXS ** 2, 1)
             Q = bxy - np.sum(XBXS*SXBY.T,1)
             #S = bxx - np.sum(np.matmul(XBXS, XBXS.T), 1)
@@ -771,11 +782,17 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             XBXSX = np.matmul(XB, XSX)
 
             Q = bxy - np.matmul(XBXSX, YB)
+        cur3 = time.time()
+        #print("_______________sparsity___cur3_____fit ", cur3 - cur21)
         qi = np.copy(Q)
         si = np.copy(S)
         Qa, Sa = Q[active], S[active]
+        cur4 = time.time()
+        #print("_______________sparsity___cur4_____fit ", cur4 - cur3)
         qi[active] = Aa * Qa / (Aa - Sa)
         si[active] = Aa * Sa / (Aa - Sa)
+        cur5 = time.time()
+        #print("_______________sparsity___cur5_____fit ", cur5 - cur4)
         return [si, qi, S, Q]
 
     def _posterior_dist(self, X, y, A, keep_prev_mean = True):
@@ -1300,7 +1317,7 @@ class RVC3(ClassificationARD3):
         upperbound3 = pos_term[:,0] - n*np.power(-neg_term[:,0], 1/n)*np.power(temp, (n-1)/n)
         return upperbound, upperbound2, upperbound3, upperbound4
 
-    def predict_upperbound_line(self, X, A, c=THRESHOLD):
+    def predict_upperbound_line(self, X, A, B, e=THRESHOLD):
         K, w, mu = self.get_feature(X)
         S = np.abs(self.sigma_[0])
         # trace = np.trace(S)
@@ -1311,13 +1328,30 @@ class RVC3(ClassificationARD3):
         # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
         # upperbound = np.matmul(K, w)
         # upperbound = upperbound + self.intercept_
-        w2 = w - c * lambda_max_sqrt
+        w2 = w - e * lambda_max_sqrt
         _, pos_term, neg_term, neg_coff, neg_dist, _ = self.collision_checking(K, mu, w2, X)
         A = A.reshape([1,2])
         dist_to_A = get_kernel( X, A, self.gamma, self.degree, self.coef0,
                        self.kernel, self.kernel_params)
-        upperbound5 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
-        return upperbound5
+        upperbound5 = pos_term - 2 * np.sqrt(neg_coff * (e - self.intercept_))*dist_to_A*neg_dist[0]
+        #### Find intersection
+        v = B - A
+        intersection = self.check_line(A, w2, v[0], e=e)
+        return upperbound5, intersection
+    def get_radius(self, X, A, e=THRESHOLD):
+        K, w, mu = self.get_feature(X)
+        S = np.abs(self.sigma_[0])
+        # trace = np.trace(S)
+        # sum_col = np.sum(S,axis=1)
+        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
+        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
+        # temp1 = norm.cdf(-0.1)
+        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
+        # upperbound = np.matmul(K, w)
+        # upperbound = upperbound + self.intercept_
+        w2 = w - e * lambda_max_sqrt
+        radius = self.check_radius(A, w2, e=e)
+        return radius
     '''
     def predict_upperbound_line_cs(self, X, A, c=-0.1):
         K, w, mu = self.get_feature(X)
@@ -1338,6 +1372,91 @@ class RVC3(ClassificationARD3):
         upperbound6 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
         return upperbound6
     '''
+    def check_line(self, s0, alpha, v, e=THRESHOLD, n = 1, tighter_bound = True):
+        total_plus = np.sum(alpha[alpha > 0])
+        rvs = self.relevant_vectors_[0]
+        tau = None
+        for j in range(len(alpha)):
+            if alpha[j] < 0:
+                continue
+            if tighter_bound:
+                temp_max = -1
+                for k in range(len(alpha)):
+                    if alpha[k] > 0:
+                        continue
+                    beta = np.log(n+1) + (n/(n+1))*np.log((e - self.intercept_[0])/n) + np.log(-alpha[k])/(n+1) -np.log(total_plus)
+                    # Quadratic conditions
+                    a = -n*(v[0]**2 + v[1]**2)*self.gamma
+                    temp1 = n*s0 + rvs[k,:] - (n+1)*rvs[j,:]
+                    b = -2*np.dot(v,temp1[0])*self.gamma
+                    temp = s0 - rvs[j,:]
+                    temp2 = np.linalg.norm(temp)**2
+                    c = (-(n+1)*(np.linalg.norm(s0 - rvs[j,:])**2) + np.linalg.norm(s0 - rvs[k,:])**2)*self.gamma - (n+1)*beta
+                    delta = b**2 - 4*a*c
+                    if delta <= 0:
+                        t1 = 100000
+                    else:
+                        t1 = (-b + np.sqrt(delta))/(2*a)
+                        t2 = (-b - np.sqrt(delta)) / (2 * a)
+
+                    if t1 >= 0:
+                        if t1 > temp_max:
+                            temp_max = t1
+                    elif t2 < 0:
+                        temp_max = 100000
+                if temp_max < 0:
+                    tau = -1
+                    break
+                elif tau is None or temp_max < tau:
+                    tau = temp_max
+        return tau
+
+    def check_radius(self, s0, alpha, e=THRESHOLD, n = 1, tighter_bound = True):
+        total_plus = np.sum(alpha[alpha > 0])
+        rvs = self.relevant_vectors_[0]
+        tau = None
+        for j in range(len(alpha)):
+            if alpha[j] < 0:
+                continue
+            if tighter_bound:
+                temp_max = -1
+                for k in range(len(alpha)):
+                    if alpha[k] > 0:
+                        continue
+                    beta = np.log(n+1) + (n/(n+1))*np.log((e - self.intercept_[0])/n) + np.log(-alpha[k])/(n+1) -np.log(total_plus)
+                    # Quadratic conditions
+                    a = -n
+                    temp1 = n*s0 + rvs[k,:] - (n+1)*rvs[j,:]
+                    b = 2*np.linalg.norm(temp1)*np.sqrt(self.gamma)
+                    temp = s0 - rvs[j,:]
+                    temp2 = np.linalg.norm(temp)**2
+                    c = (-(n+1)*(np.linalg.norm(s0 - rvs[j,:])**2) + np.linalg.norm(s0 - rvs[k,:])**2)*self.gamma - (n+1)*beta
+                    delta = b**2 - 4*a*c
+                    if delta <= 0:
+                        t1 = 100000
+                    else:
+                        t1 = (-b + np.sqrt(delta))/(2*a)
+                        t2 = (-b - np.sqrt(delta)) / (2 * a)
+
+                    if t1 >= 0:
+                        if t1 > temp_max:
+                            temp_max = t1
+                    elif t2 < 0:
+                        temp_max = 100000
+                if temp_max < 0:
+                    tau = -1
+                    break
+                elif tau is None or temp_max < tau:
+                    tau = temp_max
+        return tau/np.sqrt(self.gamma)
+
+
+
+
+
+
+
+
     def collision_checking(self, K, mu, alpha, X_test):
         f_predict_plus = np.zeros([X_test.shape[0], 1], dtype=np.float64)
         f_predict_minus = np.zeros([X_test.shape[0], 1], dtype=np.float64)

@@ -65,13 +65,13 @@ laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz",
 
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
-rvm = RVC3(n_iter = 100, kernel = 'rbf', gamma = 2.5)
+rvm = RVC3(n_iter = 100, kernel = 'rbf', gamma = 2)
 #fig, ax = plt.subplots(figsize=(12,6))
 #fig2, ax2 = plt.subplots(figsize=(12,6))
 fig = plt.figure(figsize=(12,12))
 ax = fig.add_subplot(211)
 ax2 = fig.add_subplot(212)
-for d in range(0,50, 5):#[0, 10]: #len(label_seq)):
+for d in range(0,1, 5):#[0, 10]: #len(label_seq)):
     ax.clear()
     ax2.clear()
     ax2.set_xlim(-10, 27)
@@ -82,7 +82,6 @@ for d in range(0,50, 5):#[0, 10]: #len(label_seq)):
     laser_Yy = np.array(label_seq[d])
     laser_Xx = np.array(point_seq[d])
     laser_Yy[laser_Yy < 0] = 0
-
 
 
     laser_Yy_pos = laser_Yy[laser_Yy > 0]
@@ -96,7 +95,7 @@ for d in range(0,50, 5):#[0, 10]: #len(label_seq)):
         laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
 
 
-    Xx = laser_Xx*0.25
+    Xx = laser_Xx*0.5
     Yy = laser_Yy
 
 
@@ -139,7 +138,7 @@ for d in range(0,50, 5):#[0, 10]: #len(label_seq)):
     w = rvm.coef_[0][rvm.active_[0]]
     pos_rv = ax2.scatter(svrv[w>0, 0], svrv[w>0, 1], color = 'r', s = 60)
     neg_rv = ax2.scatter(svrv[w < 0, 0], svrv[w < 0, 1], color = 'b', s = 60)
-    plt.pause(1)
+    plt.pause(0.1)
     fig.savefig("/home/erl/repos/sklearn-bayes/figs/data_rvs"+str(d)+".png", bbox_inches='tight', pad_inches=0)
     #fig2.savefig("/home/erl/repos/sklearn-bayes/figs/rvs"+str(d)+".png", bbox_inches='tight', pad_inches=0)
     print("######################################")
@@ -161,7 +160,7 @@ plt.show()
 #X2         = np.linspace(min_x[1],max_x[1],n_grid)
 n_grid = 500
 max_x      = np.array([27,12])#10*np.max(X,axis = 0)
-min_x      = np.array([-10,-5])#10*np.min(X,axis = 0)
+min_x      = 1.5*np.array([-12,-12])#10*np.min(X,axis = 0)
 
 
 X1         = np.linspace(min_x[0],max_x[0],n_grid)
@@ -172,14 +171,15 @@ Xgrid[:,0] = np.reshape(x1,(n_grid**2,))
 Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 
 rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
+rv_grid = rv_grid[:,1]
 #A = np.array([-1.1, 0.9])
 #B = np.array([0.0, -2.0])
 A = np.array([0.0, 0.0])
 B = np.array([3.5, -0.8])
 #A = np.array([0.0, 0.0])
 #B = np.array([-7.5, 2.5])
-#A = np.array([0.0, 0.0])
-#B = np.array([3.5, 6.5])
+A = np.array([0.0, 0.0])
+B = np.array([3.5, 6.5])
 
 line_seg_x = np.linspace(A[0], B[0], 100)
 line_seg_y = np.linspace(A[1], B[1], 100)
@@ -187,12 +187,59 @@ line_seg = np.vstack((line_seg_x, line_seg_y)).transpose()
 
 upper_line, upper_line2, upper_line3, upper_line4 = rvm.predict_upperbound(line_seg)
 rv_line, var_line, num, denom = rvm.predict_proba(line_seg)
-upper_line5 = rvm.predict_upperbound_line(line_seg, A)
+upper_line5, intersect = rvm.predict_upperbound_line(line_seg, A, B)
+print("intersect=", intersect)
 line_seg_rev = np.flipud(line_seg)
-upper_line6 = rvm.predict_upperbound_line(line_seg_rev, B)
+upper_line6, intersect = rvm.predict_upperbound_line(line_seg_rev, B, A)
+print("intersect=", intersect)
 upper_line6 = np.flip(upper_line6)
 upper_grid, upper_grid2, upper_grid3, upper_grid4 = rvm.predict_upperbound(Xgrid)
 upper_line7 = np.minimum(upper_line5, upper_line6)
+
+
+##### Test
+#X1_test         = np.linspace(20,25,100)
+#X2_test         = np.linspace(-18, -15,100)
+#x1_test,x2_test      = np.meshgrid(X1_test,X2_test)
+#Xgrid_test      = np.zeros([100**2,2])
+#Xgrid_test[:,0] = np.reshape(x1_test,(100**2,))
+#Xgrid_test[:,1] = np.reshape(x2_test,(100**2,))
+#upper_grid_test, upper_grid2_test, upper_grid3_test, upper_grid4_test = rvm.predict_upperbound(Xgrid_test)
+
+# Illustrate collision checking
+plt.figure()
+levels = np.arange(0,1, 0.0005)
+plt.contourf(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), cmap='coolwarm')
+
+#bounds = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+#norm = plt.colors.Normalize(vmin=0, vmax=1)
+cb  = plt.colorbar()
+
+#cb.set_ticks(0.075 + np.array([0.0, 0.15, 0.3, 0.45, 0.60, 0.75, 0.90]))
+cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+cb.ax.tick_params(labelsize=20)
+plt.contour(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+cs2 = plt.contour(X1, X2, np.reshape(upper_grid4, (n_grid, n_grid)), levels=[1e-100], cmap="Greys_r", linestyles="dashed",
+                  label="$G_2(x)$")
+v = np.linalg.norm(B-A)
+T = 20
+for i in range(T):
+    Bi = A + v*np.array([np.cos(2*i*np.pi/T), np.sin(2*i*np.pi/T)])
+    upper_line5, intersect = rvm.predict_upperbound_line(line_seg, A, Bi)
+    arr1 = plt.arrow(0, 0, Bi[0], Bi[1], head_width=0.15,
+                     head_length=0.15, fc="xkcd:cyan", ec="xkcd:cyan", width=0.05, label="colliding segment")
+    if 1 > intersect > 0:
+        #intersect = min(intersect,1.0)
+        Bx = A + intersect*v*np.array([np.cos(2*i*np.pi/T), np.sin(2*i*np.pi/T)])
+        plt.scatter(Bx[0], Bx[1], color = "xkcd:red", marker='x', s = 120)
+radius = rvm.get_radius(line_seg, A)
+svrv = rvm.relevant_vectors_[0]
+pos_rv = plt.scatter(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], color = 'r', s = 60)
+neg_rv = plt.scatter(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], color = 'b', s = 60)
+ax = plt.axes()
+circle = plt.Circle(A, radius, color='xkcd:orange',fill=False, label="free ball")
+ax.add_artist(circle)
+plt.show()
 
 plt.figure(figsize=(12, 8))
 #plt.plot(rv_line[:,1] - 0.5, label="GT")
@@ -216,7 +263,7 @@ plt.xticks(fontsize= 20)
 plt.yticks(fontsize= 20)
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/bounds_free.pdf", bbox_inches='tight', pad_inches=0)
 
-rv_grid = rv_grid[:,1]
+
 #plt.show()
 
 plt.figure(figsize = (12,8))
