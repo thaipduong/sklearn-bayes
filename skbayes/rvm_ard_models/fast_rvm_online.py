@@ -10,6 +10,7 @@ from sklearn.utils.validation import check_is_fitted
 from scipy.special import expit
 from scipy.special import erf
 from scipy.optimize import fmin_l_bfgs_b
+from scipy.optimize import minimize
 from scipy.linalg import solve_triangular
 from scipy.stats import logistic
 from scipy.stats import norm
@@ -413,7 +414,47 @@ def _gaussian_cost_grad(X,Y,w,diagA):
 
     temp = norm.pdf(Xw*t)*t/norm.cdf(Xw*t)
     grad = diagA*w - np.dot(X.T, temp)
-    return [cost / n, grad / n]
+    return cost / n, grad / n
+
+def _gaussian_cost(X,Y,w,diagA):
+    '''
+        Calculates cost and gradient for probit regression
+        '''
+    n = X.shape[0]
+    Xw = np.dot(X, w)
+    t = (Y-0.5)*2
+    s = norm.cdf(Xw)
+    #tt = np.sum(np.log(s[Y==1]), 0)
+    #tt2 = np.sum(np.log(1-s[Y==0]), 0)
+    #tt3 = 0.5*np.sum((diagA*(w**2)))
+    cost = -(np.sum(np.log(s[Y==1]), 0) + \
+             np.sum(np.log(1-s[Y==0]), 0))
+    cost = cost + 0.5*np.sum((diagA*(w**2)))#0.5*(diagA*(w**2))
+    return cost / n
+
+def _gaussian_grad(X,Y,w,diagA):
+    '''
+        Calculates cost and gradient for probit regression
+        '''
+    n = X.shape[0]
+    Xw = np.dot(X, w)
+    t = (Y-0.5)*2
+    temp = norm.pdf(Xw*t)*t/norm.cdf(Xw*t)
+    grad = diagA*w - np.dot(X.T, temp)
+    return grad / n
+
+def _gaussian_hess(X,Y,w,diagA):
+    '''
+        Calculates cost and gradient for probit regression
+        '''
+    n = X.shape[0]
+    Xw = np.dot(X, w)
+    t = (Y-0.5)*2
+    eta = norm.pdf(Xw*t)*t/norm.cdf(Xw*t)
+    B = eta*(Xw + eta)
+    S = np.dot(X.T * B, X)
+    np.fill_diagonal(S, np.diag(S) + diagA)
+    return S / n
     
 
         
@@ -592,15 +633,15 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         start = time.time()
         for i in range(self.n_iter):
             cur = time.time()
-            print("___fit ", i, " = ", cur - start)
+            #print("___fit ", i, " = ", cur - start)
             Xa      =  X[:,active]
             Aa      =  A[active]
 
             # mean & precision of posterior distribution
             Mn,Sn,B,t_hat, cholesky = self._posterior_dist(Xa,y, Aa)
 
-            cur = time.time()
-            #print("___fit ", i, "(approximation) = ", cur - start)
+            cur1 = time.time()
+            print("___fit_cur1 ", i, "(approximation) = ", cur1 - cur)
             if not cholesky:
                 warning_flag += 1
             
@@ -616,18 +657,20 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             #        Sn = np.linalg.cholesky(Sn2)
             # compute quality & sparsity parameters
             s,q,S,Q = self._sparsity_quality(X,Xa,t_hat,B,A,Aa,active,Sn,cholesky)
-            cur = time.time()
-            #print("___fit ", i, "(SQ) = ", cur - start)
+            cur2 = time.time()
+            print("___fit_cur2 ", i, "(approximation) = ", cur2 - cur1)
             # update precision parameters of coefficients
             #print self.tol
             skip = self.prev_rvcount if self.prev_trained else 0
             A,converged  = update_precisions(Q,S,q,s,A,active,self.tol,n_samples,self.fit_intercept, skip=skip)
-            cur = time.time()
-            #print("___fit ", i, "(update alpha) = ", cur - start)
+            cur3 = time.time()
+            print("___fit_cur3 ", i, "(approximation) = ", cur3 - cur2)
+            print("___fit_oneloop ", i, "(approximation) = ", cur3 - cur)
             # terminate if converged
             if converged or i == self.n_iter - 1:
                 break
-        
+        finish_loop = time.time()
+        print("___fit_finish_loop ", i, " = ", finish_loop - start)
         Xa,Aa   = X[:,active], A[active]
         Xa = Xa[active,:]
         ya = y[active]
@@ -647,6 +690,8 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         coef_[0,active] = Mn
         #if self.prev_trained:
         #    Sn[0:self.prev_rvcount, 0:self.prev_rvcount] = self.prev_sigma[0]
+        finish = time.time()
+        print("___fit_finish ", i, " = ", finish - start)
         return coef_.squeeze(), intercept_, active, Sn, A
    
         
@@ -766,13 +811,13 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             Xa.astype(np.float32)
             XBX = np.matmul(XB, Xa)
             cur21 = time.time()
-            #print("_______________cholesky___cur21_____fit ", cur21 - cur2)
+            print("_______________cholesky___cur21_____fit ", cur21 - cur2)
             XBXS = np.matmul(XBX, Sn.T)
             cur22 = time.time()
-            #print("_______________cholesky___cur22_____fit ", cur22 - cur21)
+            print("_______________cholesky___cur22_____fit ", cur22 - cur21)
             SXBY = np.matmul(Sn, np.matmul(Xa.T,YB))
             cur23 = time.time()
-            #print("_______________cholesky___cur23_____fit ", cur23 - cur22)
+            print("_______________cholesky___cur23_____fit ", cur23 - cur22)
             S = bxx - np.sum(XBXS ** 2, 1)
             Q = bxy - np.sum(XBXS*SXBY.T,1)
             #S = bxx - np.sum(np.matmul(XBXS, XBXS.T), 1)
@@ -783,23 +828,26 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
 
             Q = bxy - np.matmul(XBXSX, YB)
         cur3 = time.time()
-        #print("_______________sparsity___cur3_____fit ", cur3 - cur21)
+        print("_______________sparsity___cur3_____fit ", cur3 - cur21)
         qi = np.copy(Q)
         si = np.copy(S)
         Qa, Sa = Q[active], S[active]
         cur4 = time.time()
-        #print("_______________sparsity___cur4_____fit ", cur4 - cur3)
+        print("_______________sparsity___cur4_____fit ", cur4 - cur3)
         qi[active] = Aa * Qa / (Aa - Sa)
         si[active] = Aa * Sa / (Aa - Sa)
         cur5 = time.time()
-        #print("_______________sparsity___cur5_____fit ", cur5 - cur4)
+        print("_______________sparsity___cur5_____fit ", cur5 - cur4)
         return [si, qi, S, Q]
 
     def _posterior_dist(self, X, y, A, keep_prev_mean = True):
         '''
         Uses Laplace approximation for calculating posterior distribution
         '''
-        f = lambda w: _gaussian_cost_grad(X, y, w, A)
+        f_full = lambda w: _gaussian_cost_grad(X, y, w, A)
+        f = lambda w: _gaussian_cost(X, y, w, A)
+        f_grad = lambda w: _gaussian_grad(X, y, w, A)
+        f_hess = lambda  w: _gaussian_hess(X, y, w, A)
         w_init = np.random.random(X.shape[1])
         if self.prev_trained:
             w_init[0:self.prev_rvcount] = self.prev_mu
@@ -810,8 +858,15 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         # print X.shape
         ##print y.shape
         # print A.shape
-        Mn = fmin_l_bfgs_b(f, x0=w_init, pgtol=self.tol_solver,
-                           maxiter=self.n_iter_solver)[0]
+        #Mn = fmin_l_bfgs_b(f_full, x0=w_init, pgtol=self.tol_solver,
+        #                   maxiter=self.n_iter_solver)[0]
+        opts = {'xtol': self.tol_solver, 'maxiter': self.n_iter_solver}
+        #bb = f(w_init)
+        #aa = f_grad(w_init)
+        #cc = f_full(w_init)
+        #dd = f_hess(w_init)
+        Mn = minimize(f, x0=w_init,  method="Newton-CG", jac=f_grad, hess=f_hess, options=opts)
+        Mn = Mn.x
         if self.prev_trained and keep_prev_mean:
             Mn[0:self.prev_rvcount] = self.prev_mu
         Xm_nobias = np.dot(X, Mn)
@@ -1089,7 +1144,7 @@ class RVC3(ClassificationARD3):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 200, tol = 1e-2, n_iter_solver = 30, tol_solver = 1e-3,
+    def __init__(self, n_iter = 200, tol = 1e-2, n_iter_solver = 10, tol_solver = 1e-2,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC3,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,

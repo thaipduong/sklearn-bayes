@@ -65,7 +65,7 @@ laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz",
 
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
-rvm = RVC3(n_iter = 100, kernel = 'rbf', gamma = 2)
+rvm = RVC3(n_iter = 25, kernel = 'rbf', gamma = 2)
 #fig, ax = plt.subplots(figsize=(12,6))
 #fig2, ax2 = plt.subplots(figsize=(12,6))
 fig = plt.figure(figsize=(12,12))
@@ -179,6 +179,7 @@ B = np.array([3.5, -0.8])
 #A = np.array([0.0, 0.0])
 #B = np.array([-7.5, 2.5])
 A = np.array([0.0, 0.0])
+A = np.array([3.0, 3.0])
 B = np.array([3.5, 6.5])
 
 line_seg_x = np.linspace(A[0], B[0], 100)
@@ -226,13 +227,15 @@ T = 20
 for i in range(T):
     Bi = A + v*np.array([np.cos(2*i*np.pi/T), np.sin(2*i*np.pi/T)])
     upper_line5, intersect = rvm.predict_upperbound_line(line_seg, A, Bi)
-    arr1 = plt.arrow(0, 0, Bi[0], Bi[1], head_width=0.15,
-                     head_length=0.15, fc="xkcd:cyan", ec="xkcd:cyan", width=0.05, label="colliding segment")
+    print("intersect", intersect)
+    arr1 = plt.arrow(A[0], A[1], Bi[0]-A[0], Bi[1]-A[1], head_width=0.15,
+                     head_length=0.15, fc="g", ec="g", width=0.05, label="colliding segment")
     if 1 > intersect > 0:
         #intersect = min(intersect,1.0)
         Bx = A + intersect*v*np.array([np.cos(2*i*np.pi/T), np.sin(2*i*np.pi/T)])
         plt.scatter(Bx[0], Bx[1], color = "xkcd:red", marker='x', s = 120)
 radius = rvm.get_radius(line_seg, A)
+print("radius", radius)
 svrv = rvm.relevant_vectors_[0]
 pos_rv = plt.scatter(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], color = 'r', s = 60)
 neg_rv = plt.scatter(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], color = 'b', s = 60)
