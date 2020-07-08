@@ -32,7 +32,7 @@ print("All test are passed ...")
 # ## Relevance Vector Regression
 
 from sklearn.utils.estimator_checks import check_estimator
-from skbayes.rvm_ard_models import RegressionARD3,ClassificationARD3,RVR3,RVC3, RVSet
+from skbayes.rvm_ard_models import RegressionARD3,ClassificationARD3,RVR3,RVC4, RVSet
 from sklearn.svm import SVR
 from sklearn.model_selection import GridSearchCV
 import numpy as np
@@ -65,7 +65,7 @@ laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz",
 
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
-rvm = RVC3(n_iter = 25, kernel = 'rbf', gamma = 2)
+rvm = RVC4(n_iter = 50, kernel = 'rbf', gamma =1.0)
 #fig, ax = plt.subplots(figsize=(12,6))
 #fig2, ax2 = plt.subplots(figsize=(12,6))
 fig = plt.figure(figsize=(12,12))
@@ -90,9 +90,9 @@ for d in range(0,len(label_seq), 5):#[0, 10]: #len(label_seq)):
     neg_portion = len(laser_Yy) - pos_portion
     r = max(int(neg_portion/pos_portion), 0)
 
-    for i in range(r):
-        laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
-        laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
+    #for i in range(r):
+    #    laser_Xx = np.vstack((laser_Xx, laser_Xx_pos))
+    #    laser_Yy = np.hstack((laser_Yy, laser_Yy_pos))
 
 
     Xx = laser_Xx*0.5
@@ -129,6 +129,7 @@ for d in range(0,len(label_seq), 5):#[0, 10]: #len(label_seq)):
     print(classification_report(y, y_hat))
     print(rvm.sigma_[0].shape)
     print(len(rvm.relevant_vectors_[0]))
+
 
     ax.plot(X[Y == 0, 0], X[Y == 0, 1], "bo", markersize=3)
     ax.plot(X[Y == 1, 0], X[Y == 1, 1], "ro", markersize=3)

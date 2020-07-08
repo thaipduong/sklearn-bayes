@@ -20,11 +20,13 @@ from numpy import linalg as LA
 import scipy.sparse
 import warnings
 import time
+from rtree import index
 from numbers import Number
 
 INTERCEPT = False
 THRESHOLD = -0.01
 UNKNOWN_PROB = -0.05
+
 #TODO: predict_proba for RVC with Laplace Approximation
 
 
@@ -99,291 +101,7 @@ def update_precisions(Q,S,q,s,A,active,tol,n_samples,clf_bias, skip = 0):
 ###############################################################################
 
 
-#-------------------------- Regression ARD ------------------------------------
 
-
-class RegressionARD3(LinearModel,RegressorMixin):
-    '''
-    Regression with Automatic Relevance Determination (Fast Version uses 
-    Sparse Bayesian Learning)
-    
-    Parameters
-    ----------
-    n_iter: int, optional (DEFAULT = 100)
-        Maximum number of iterations
-        
-    tol: float, optional (DEFAULT = 1e-3)
-        If absolute change in precision parameter for weights is below threshold
-        algorithm terminates.
-        
-    fit_intercept : boolean, optional (DEFAULT = True)
-        whether to calculate the intercept for this model. If set
-        to false, no intercept will be used in calculations
-        (e.g. data is expected to be already centered).
-        
-    copy_X : boolean, optional (DEFAULT = True)
-        If True, X will be copied; else, it may be overwritten.
-        
-    verbose : boolean, optional (DEFAULT = True)
-        Verbose mode when fitting the model
-        
-        
-    Attributes
-    ----------
-    coef_ : array, shape = (n_features)
-        Coefficients of the regression model (mean of posterior distribution)
-        
-    alpha_ : float
-       estimated precision of the noise
-       
-    active_ : array, dtype = np.bool, shape = (n_features)
-       True for non-zero coefficients, False otherwise
-       
-    lambda_ : array, shape = (n_features)
-       estimated precisions of the coefficients
-       
-    sigma_ : array, shape = (n_features, n_features)
-        estimated covariance matrix of the weights, computed only
-        for non-zero coefficients  
-       
-       
-    References
-    ----------
-    [1] Fast marginal likelihood maximisation for sparse Bayesian models (Tipping & Faul 2003)
-        (http://www.miketipping.com/papers/met-fastsbl.pdf)
-    [2] Analysis of sparse Bayesian learning (Tipping & Faul 2001)
-        (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
-        
-    '''
-    
-    def __init__( self, n_iter = 300, tol = 1e-3, fit_intercept = INTERCEPT,
-                  copy_X = True, verbose = False):
-        self.n_iter          = n_iter
-        self.tol             = tol
-        self.scores_         = list()
-        self.fit_intercept   = fit_intercept
-        self.copy_X          = copy_X
-        self.verbose         = verbose
-        
-        
-    def _center_data(self,X,y):
-        ''' Centers data'''
-        X     = as_float_array(X,self.copy_X)
-        # normalisation should be done in preprocessing!
-        X_std = np.ones(X.shape[1], dtype = X.dtype)
-        if self.fit_intercept:
-            X_mean = np.average(X,axis = 0)
-            y_mean = np.average(y,axis = 0)
-            X     -= X_mean
-            y      = y - y_mean
-        else:
-            X_mean = np.zeros(X.shape[1],dtype = X.dtype)
-            y_mean = 0. if y.ndim == 1 else np.zeros(y.shape[1], dtype=X.dtype)
-        return X,y, X_mean, y_mean, X_std
-        
-        
-    def fit(self,X,y):
-        '''
-        Fits ARD Regression with Sequential Sparse Bayes Algorithm.
-        
-        Parameters
-        -----------
-        X: {array-like, sparse matrix} of size (n_samples, n_features)
-           Training data, matrix of explanatory variables
-        
-        y: array-like of size [n_samples, n_features] 
-           Target values
-           
-        Returns
-        -------
-        self : object
-            Returns self.
-        '''
-        X, y = check_X_y(X, y, dtype=np.float64, y_numeric=True)
-        X, y, X_mean, y_mean, X_std = self._center_data(X, y)
-        n_samples, n_features = X.shape
-
-        #  precompute X'*Y , X'*X for faster iterations & allocate memory for
-        #  sparsity & quality vectors
-        XY     = np.dot(X.T,y)
-        XX     = np.dot(X.T,X)
-        XXd    = np.diag(XX)
-
-        #  initialise precision of noise & and coefficients
-        var_y  = np.var(y)
-        
-        # check that variance is non zero !!!
-        if var_y == 0 :
-            beta = 1e-2
-        else:
-            beta = 1. / np.var(y)
-        
-        A      = np.PINF * np.ones(n_features)
-        active = np.zeros(n_features , dtype = np.bool)
-        
-        # in case of almost perfect multicollinearity between some features
-        # start from feature 0
-        if np.sum( XXd - X_mean**2 < np.finfo(np.float32).eps ) > 0:
-            A[0]       = np.finfo(np.float16).eps
-            active[0]  = True
-        else:
-            # start from a single basis vector with largest projection on targets
-            proj  = XY**2 / XXd
-            start = np.argmax(proj)
-            active[start] = True
-            A[start]      = XXd[start]/( proj[start] - var_y)
- 
-        warning_flag = 0
-        for i in range(self.n_iter):
-            XXa     = XX[active,:][:,active]
-            XYa     = XY[active]
-            Aa      =  A[active]
-            
-            # mean & covariance of posterior distribution
-            Mn,Ri,cholesky  = self._posterior_dist(Aa,beta,XXa,XYa)
-            if cholesky:
-                Sdiag  = np.sum(Ri**2,0)
-            else:
-                Sdiag  = np.copy(np.diag(Ri)) 
-                warning_flag += 1
-            
-            # raise warning in case cholesky failes
-            if warning_flag == 1:
-                warnings.warn(("Cholesky decomposition failed ! Algorithm uses pinvh, "
-                               "which is significantly slower, if you use RVR it "
-                               "is advised to change parameters of kernel"))
-                
-            # compute quality & sparsity parameters            
-            s,q,S,Q = self._sparsity_quality(XX,XXd,XY,XYa,Aa,Ri,active,beta,cholesky)
-                
-            # update precision parameter for noise distribution
-            rss     = np.sum( ( y - np.dot(X[:,active] , Mn) )**2 )
-            beta    = n_samples - np.sum(active) + np.sum(Aa * Sdiag )
-            beta   /= ( rss + np.finfo(np.float32).eps )
-
-            # update precision parameters of coefficients
-            A,converged  = update_precisions(Q,S,q,s,A,active,self.tol,
-                                             n_samples,False)
-            if self.verbose:
-                print(('Iteration: {0}, number of features '
-                       'in the model: {1}').format(i,np.sum(active)))
-            if converged or i == self.n_iter - 1:
-                if converged and self.verbose:
-                    print('Algorithm converged !')
-                break
-                 
-        # after last update of alpha & beta update parameters
-        # of posterior distribution
-        XXa,XYa,Aa         = XX[active,:][:,active],XY[active],A[active]
-        Mn, Sn, cholesky   = self._posterior_dist(Aa,beta,XXa,XYa,True)
-        self.coef_         = np.zeros(n_features)
-        self.coef_[active] = Mn
-        self.sigma_        = Sn
-        self.active_       = active
-        self.lambda_       = A
-        self.alpha_        = beta
-        self._set_intercept(X_mean,y_mean,X_std)
-        return self
-        
-        
-    def predict_dist(self,X):
-        '''
-        Computes predictive distribution for test set.
-        Predictive distribution for each data point is one dimensional
-        Gaussian and therefore is characterised by mean and variance.
-        
-        Parameters
-        -----------
-        X: {array-like, sparse} (n_samples_test, n_features)
-           Test data, matrix of explanatory variables
-           
-        Returns
-        -------
-        : list of length two [y_hat, var_hat]
-        
-             y_hat: numpy array of size (n_samples_test,)
-                    Estimated values of targets on test set (i.e. mean of predictive
-                    distribution)
-           
-             var_hat: numpy array of size (n_samples_test,)
-                    Variance of predictive distribution
-        '''
-        y_hat     = self._decision_function(X)
-        #var_hat   = 1./self.alpha_
-        #var_hat  += np.sum( np.dot(X[:,self.active_],self.sigma_) * X[:,self.active_], axis = 1)
-        var_hat = np.sum(np.dot(X[:, self.active_], self.sigma_) * X[:, self.active_], axis=1)
-        return y_hat, var_hat
-
-
-    def _posterior_dist(self,A,beta,XX,XY,full_covar=False):
-        '''
-        Calculates mean and covariance matrix of posterior distribution
-        of coefficients.
-        '''
-        # compute precision matrix for active features
-        Sinv = beta * XX
-        np.fill_diagonal(Sinv, np.diag(Sinv) + A)
-        cholesky = True
-        # try cholesky, if it fails go back to pinvh
-        try:
-            # find posterior mean : R*R.T*mean = beta*X.T*Y
-            # solve(R*z = beta*X.T*Y) => find z => solve(R.T*mean = z) => find mean
-            R    = np.linalg.cholesky(Sinv)
-            Z    = solve_triangular(R,beta*XY, check_finite=False, lower = True)
-            Mn   = solve_triangular(R.T,Z, check_finite=False, lower = False)
-            
-            # invert lower triangular matrix from cholesky decomposition
-            Ri   = solve_triangular(R,np.eye(A.shape[0]), check_finite=False, lower=True)
-            if full_covar:
-                Sn   = np.dot(Ri.T,Ri)
-                return Mn,Sn,cholesky
-            else:
-                return Mn,Ri,cholesky
-        except LinAlgError:
-            cholesky = False
-            Sn   = pinvh(Sinv)
-            Mn   = beta*np.dot(Sinv,XY)
-            return Mn, Sn, cholesky
-            
-    
-    
-    
-    def _sparsity_quality(self,XX,XXd,XY,XYa,Aa,Ri,active,beta,cholesky):
-        '''
-        Calculates sparsity and quality parameters for each feature
-        
-        Theoretical Note:
-        -----------------
-        Here we used Woodbury Identity for inverting covariance matrix
-        of target distribution 
-        C    = 1/beta + 1/alpha * X' * X
-        C^-1 = beta - beta^2 * X * Sn * X'
-        '''
-        bxy        = beta*XY
-        bxx        = beta*XXd
-        if cholesky:
-            # here Ri is inverse of lower triangular matrix obtained from cholesky decomp
-            xxr    = np.dot(XX[:,active],Ri.T)
-            rxy    = np.dot(Ri,XYa)
-            S      = bxx - beta**2 * np.sum( xxr**2, axis=1)
-            Q      = bxy - beta**2 * np.dot( xxr, rxy)
-        else:
-            # here Ri is covariance matrix
-            XXa    = XX[:,active]
-            XS     = np.dot(XXa,Ri)
-            S      = bxx - beta**2 * np.sum(XS*XXa,1)
-            Q      = bxy - beta**2 * np.dot(XS,XYa)
-        # Use following:
-        # (EQ 1) q = A*Q/(A - S) ; s = A*S/(A-S), so if A = np.PINF q = Q, s = S
-        qi         = np.copy(Q)
-        si         = np.copy(S) 
-        #  If A is not np.PINF, then it should be 'active' feature => use (EQ 1)
-        Qa,Sa      = Q[active], S[active]
-        qi[active] = Aa * Qa / (Aa - Sa )
-        si[active] = Aa * Sa / (Aa - Sa )
-        return [si,qi,S,Q]
-              
-        
 #----------------------- Classification ARD -----------------------------------
      
      
@@ -458,7 +176,7 @@ def _gaussian_hess(X,Y,w,diagA):
     
 
         
-class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
+class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
     '''
     Logistic Regression with Automatic Relevance determination (Fast Version uses 
     Sparse Bayesian Learning)
@@ -524,8 +242,11 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         self.fit_intercept      = fit_intercept
         self.fixed_intercept = fixed_intercept
         self.verbose            = verbose
-        self.relevant_vectors = None
+        #self.relevant_vectors = None
         self.prev_trained = False
+        self.rtree_index = index.Index()
+        self.relevant_vectors_dict = {}
+        self.relevant_vectors_local = None
     
     
     def fit(self,X,y):
@@ -577,11 +298,6 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
             self.intercept_ , self.active_ = [0]*n_classes, [0]*n_classes
             self.lambda_                   = [0]*n_classes
         else:
-            if self.prev_trained:  # i.e. there is an existing model trained previously.
-                self.prev_sigma = self.sigma_
-                self.prev_mu = self.coef_[0][self.active_[0]]
-                self.prev_rvcount = len(self.prev_mu)
-                self.prev_A = self.lambda_[0][self.active_[0]]
             self.coef_, self.sigma_, self.intercept_,self.active_ = [0],[[0]],[0],[0]
             self.lambda_                                          = [0]
          
@@ -615,7 +331,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
 
         if self.prev_trained: # i.e. there is an existing model trained previously.
             active[0:self.prev_rvcount] = True
-            A[0:self.prev_rvcount] = 1e-3*np.ones(self.prev_rvcount)#self.prev_A
+            A[0:self.prev_rvcount] = self.prev_A#1e-3*np.ones(self.prev_rvcount)
             active[self.prev_rvcount] = True
             A[self.prev_rvcount] = 1
             #self.prev_sigma = self.sigma_
@@ -671,6 +387,7 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
                 break
         finish_loop = time.time()
         print("___fit_finish_loop ", i, " = ", finish_loop - start)
+
         Xa,Aa   = X[:,active], A[active]
         Xa = Xa[active,:]
         ya = y[active]
@@ -853,22 +570,22 @@ class ClassificationARD3(BaseEstimator,LinearClassifierMixin):
         #    w_init[0:self.prev_rvcount] = self.prev_mu
         #    if len(self.prev_mu) != self.prev_rvcount:
         #        print(len(self.prev_mu), self.prev_rvcount)
-        #        print(self.prev_sigma.shape)
         # print w_init.shape
         # print X.shape
         ##print y.shape
         # print A.shape
-        #Mn = fmin_l_bfgs_b(f_full, x0=w_init, pgtol=self.tol_solver,
-        #                   maxiter=self.n_iter_solver)[0]
-        opts = {'xtol': self.tol_solver, 'maxiter': self.n_iter_solver}
+        Mn = fmin_l_bfgs_b(f_full, x0=w_init, pgtol=self.tol_solver,
+                           maxiter=self.n_iter_solver)[0]
+
         #bb = f(w_init)
         #aa = f_grad(w_init)
         #cc = f_full(w_init)
         #dd = f_hess(w_init)
-        Mn = minimize(f, x0=w_init,  method="Newton-CG", jac=f_grad, hess=f_hess, options=opts)
-        Mn = Mn.x
-        if self.prev_trained and keep_prev_mean:
-            Mn[0:self.prev_rvcount] = self.prev_mu
+        #opts = {'xtol': self.tol_solver, 'maxiter': self.n_iter_solver}
+        #Mn = minimize(f, x0=w_init,  method="Newton-CG", jac=f_grad, hess=f_hess, options=opts)
+        #Mn = Mn.x
+        #if self.prev_trained and keep_prev_mean:
+        #    Mn[0:self.prev_rvcount] = self.prev_mu
         Xm_nobias = np.dot(X, Mn)
         Xm = Xm_nobias + self.fixed_intercept
         #s = norm.cdf(Xm)
@@ -911,172 +628,7 @@ def get_kernel( X, Y, gamma, degree, coef0, kernel, kernel_params ):
                             filter_params=True, **params)
                             
 
-
-class RVR3(RegressionARD3):
-    '''
-    Relevance Vector Regression (Fast Version uses Sparse Bayesian Learning)
-    
-    Parameters
-    ----------
-    n_iter: int, optional (DEFAULT = 300)
-        Maximum number of iterations
-        
-    fit_intercept : boolean, optional (DEFAULT = True)
-        whether to calculate the intercept for this model
-        
-    tol: float, optional (DEFAULT = 1e-3)
-        If absolute change in precision parameter for weights is below tol
-        algorithm terminates.
-        
-    copy_X : boolean, optional (DEFAULT = True)
-        If True, X will be copied; else, it may be overwritten.
-        
-    verbose : boolean, optional (DEFAULT = True)
-        Verbose mode when fitting the model 
-        
-    kernel: str, optional (DEFAULT = 'poly')
-        Type of kernel to be used (all kernels: ['rbf' | 'poly' | 'sigmoid', 'linear']
-    
-    degree : int, (DEFAULT = 3)
-        Degree for poly kernels. Ignored by other kernels.
-        
-    gamma : float, optional (DEFAULT = 1/n_features)
-        Kernel coefficient for rbf and poly kernels, ignored by other kernels
-        
-    coef0 : float, optional (DEFAULT = 1)
-        Independent term in poly and sigmoid kernels, ignored by other kernels
-        
-    kernel_params : mapping of string to any, optional
-        Parameters (keyword arguments) and values for kernel passed as
-        callable object, ignored by other kernels
-        
-        
-    Attributes
-    ----------
-    coef_ : array, shape = (n_features)
-        Coefficients of the regression model (mean of posterior distribution)
-        
-    alpha_ : float
-       estimated precision of the noise
-       
-    active_ : array, dtype = np.bool, shape = (n_features)
-       True for non-zero coefficients, False otherwise
-       
-    lambda_ : array, shape = (n_features)
-       estimated precisions of the coefficients
-       
-    sigma_ : array, shape = (n_features, n_features)
-        estimated covariance matrix of the weights, computed only
-        for non-zero coefficients
-        
-    relevant_vectors_ : array 
-        Relevant Vectors
-
-    
-    References
-    ----------
-    [1] Fast marginal likelihood maximisation for sparse Bayesian models (Tipping & Faul 2003)
-        (http://www.miketipping.com/papers/met-fastsbl.pdf)
-    [2] Analysis of sparse Bayesian learning (Tipping & Faul 2001)
-        (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
-    '''
-    def __init__(self, n_iter=300, tol = 1e-3, fit_intercept = INTERCEPT, copy_X = True,
-                 verbose = False, kernel = 'poly', degree = 3, gamma  = None,
-                 coef0  = 1, kernel_params = None):
-        super(RVR3,self).__init__(n_iter,tol,fit_intercept,copy_X,verbose)
-        self.kernel = kernel
-        self.degree = degree
-        self.gamma  = gamma
-        self.coef0  = coef0
-        self.kernel_params = kernel_params
-    
-    
-    def fit(self,X,y):
-        '''
-        Fit Relevance Vector Regression Model
-        
-        Parameters
-        -----------
-        X: {array-like,sparse matrix} of size (n_samples, n_features)
-           Training data, matrix of explanatory variables
-        
-        y: array-like of size (n_samples, ) 
-           Target values
-           
-        Returns
-        -------
-        self: object
-           self
-        '''
-        X,y = check_X_y(X,y,accept_sparse=['csr','coo','bsr'],dtype = np.float64)
-        # kernelise features
-        K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
-                       self.kernel, self.kernel_params)
-        
-        # use fit method of RegressionARD
-        _ = super(RVR3,self).fit(K,y)
-
-        # convert to csr (need to use __getitem__)
-        convert_tocsr = [scipy.sparse.coo.coo_matrix, 
-                         scipy.sparse.dia.dia_matrix,
-                         scipy.sparse.bsr.bsr_matrix]
-        if type(X) in convert_tocsr:
-            X = X.tocsr()
-        self.relevant_  = np.where(self.active_== True)[0]
-        if X.ndim == 1:
-            self.relevant_vectors_ = X[self.relevant_]
-        else:
-            self.relevant_vectors_ = X[self.relevant_,:]
-        return self
-        
-        
-    def _decision_function(self,X):
-        ''' Decision function '''
-        _, predict_vals = self._kernel_decision_function(X)
-        return predict_vals
-        
-    
-    def _kernel_decision_function(self,X):
-        ''' Computes kernel and decision function based on kernel'''
-        check_is_fitted(self,'coef_')
-        X = check_array(X, accept_sparse=['csr', 'csc', 'coo'])
-        K = get_kernel( X, self.relevant_vectors_, self.gamma, self.degree, 
-                        self.coef0, self.kernel, self.kernel_params)
-        return K , np.dot(K,self.coef_[self.active_]) + self.intercept_
-        
-        
-    def predict_dist(self,X):
-        '''
-        Computes predictive distribution for test set. Predictive distribution
-        for each data point is one dimensional Gaussian and therefore is 
-        characterised by mean and variance.
-        
-        Parameters
-        ----------
-        X: {array-like,sparse matrix} of size (n_samples_test, n_features)
-           Matrix of explanatory variables 
-           
-        Returns
-        -------
-        : list of length two [y_hat, var_hat]
-        
-             y_hat: numpy array of size (n_samples_test,)
-                    Estimated values of targets on test set (i.e. mean of predictive
-                    distribution)
-           
-             var_hat: numpy array of size (n_samples_test,)
-                    Variance of predictive distribution
-        '''
-        # kernel matrix and mean of predictive distribution
-        K, y_hat  = self._kernel_decision_function(X)
-        var_hat   = 1./self.alpha_
-        #var_hat  += np.sum( np.dot(K,self.sigma_) * K, axis = 1)
-        #var_hat = np.sum(np.dot(K, self.sigma_) * K, axis=1)
-        return y_hat, var_hat
-
-
-
-class RVC3(ClassificationARD3):
+class RVC4(ClassificationARD4):
     '''
     Relevance Vector Classifier (Fast Version, uses Sparse Bayesian Learning )
         
@@ -1147,7 +699,7 @@ class RVC3(ClassificationARD3):
     def __init__(self, n_iter = 200, tol = 1e-2, n_iter_solver = 10, tol_solver = 1e-2,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
-        super(RVC3,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
+        super(RVC4,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
                                  fit_intercept, fixed_intercept, verbose)
         print("Init RVC", self.tol)
         self.kernel        = kernel
@@ -1178,12 +730,27 @@ class RVC3(ClassificationARD3):
         '''
         X_orig = np.copy(X)
         y_orig = np.copy(y)
+
+
         if self.prev_trained:
-            xa = X[0,:].tolist()
-            xa2 = X[0, :]
-            a = [7.75, -10.0] not in self.prev_X
-            Xdiff = np.array([X[i,:] if X[i,:].tolist() not in self.prev_X else None for i in range(len(X))]) #np.setdiff1d(X, self.prev_X)
-            ydiff = np.array([y[i] if X[i, :].tolist() not in self.prev_X else None for i in range(len(X))])
+            #xa = X[0,:].tolist()
+            #xa2 = X[0, :]
+            #a = [7.75, -10.0] not in self.prev_X
+            X_mean = np.mean(X, axis=0)
+            nearest_rv = self.rtree_index.nearest((X_mean[0], X_mean[1], X_mean[0], X_mean[1]), 50, objects=True)
+            local_rv = []
+            local_rv_label = []
+            local_A = []
+            for rv in nearest_rv:
+                local_rv.append([rv.bbox[0], rv.bbox[1]])
+                local_rv_label.append(self.relevant_vectors_dict[(rv.bbox[0], rv.bbox[1])][0])
+                local_A.append(self.relevant_vectors_dict[(rv.bbox[0], rv.bbox[1])][1])
+            self.relevant_vectors_local = local_rv
+            self.prev_rvcount = len(local_rv)
+            self.prev_A = local_A
+            #prev_rv = self.relevant_vectors_[0].tolist()
+            Xdiff = np.array([X[i,:] if X[i,:].tolist() not in self.prev_X and X[i,:].tolist() not in local_rv else None for i in range(len(X))]) #np.setdiff1d(X, self.prev_X)
+            ydiff = np.array([y[i] if X[i, :].tolist() not in self.prev_X and X[i,:].tolist() not in local_rv else None for i in range(len(X))])
             Xdiff = Xdiff[ydiff != None]
             ydiff = ydiff[ydiff != None]
             if len(ydiff) > 0:
@@ -1200,31 +767,60 @@ class RVC3(ClassificationARD3):
             Xdiff_pos = Xdiff[ydiff > 0, :]
             pos_portion = sum(ydiff[ydiff > 0])
             neg_portion = len(ydiff) - pos_portion
-            if (pos_portion > 0):
-                r = max(int(neg_portion / pos_portion), 0)
-                for i in range(r):
-                    Xdiff = np.vstack((Xdiff, Xdiff_pos))
-                    ydiff = np.hstack((ydiff, ydiff_pos))
-            X = np.vstack((self.relevant_vectors_[0], Xdiff))
-            y = np.hstack((self.rv_labels[0], ydiff))
+            #if (pos_portion > 0):
+            #    r = max(int(neg_portion / pos_portion), 0)
+            #    for i in range(r):
+            #        Xdiff = np.vstack((Xdiff, Xdiff_pos))
+            #        ydiff = np.hstack((ydiff, ydiff_pos))
+            X = np.vstack((local_rv, Xdiff))
+            y = np.hstack((local_rv_label, ydiff))
             #X = np.vstack((self.relevant_vectors_[0], X_orig))
             #y = np.hstack((self.rv_labels[0], y_orig))
 
         X,y = check_X_y(X,y, accept_sparse = False, dtype = np.float64)
 
+
         # kernelise features
         K = get_kernel( X, X, self.gamma, self.degree, self.coef0, 
                        self.kernel, self.kernel_params)
         # use fit method of ClassificationARD
-        _ = super(RVC3,self).fit(K,y)
+        _ = super(RVC4,self).fit(K,y)
         self.relevant_  = [np.where(active==True)[0] for active in self.active_]
         if X.ndim == 1:
             self.relevant_vectors_ = [ X[relevant_] for relevant_ in self.relevant_]
             self.rv_labels = [ y[relevant_] for relevant_ in self.relevant_]
+            self.rv_A = [self.lambda_[0][relevant_] for relevant_ in self.relevant_]
         else:
             self.relevant_vectors_ = [ X[relevant_,:] for relevant_ in self.relevant_ ]
             self.rv_labels = [y[relevant_] for relevant_ in self.relevant_]
+            self.rv_A = [self.lambda_[0][relevant_] for relevant_ in self.relevant_]
 
+
+        rv_local_list = self.relevant_vectors_[0].tolist()
+
+        count_dict = {}
+        for i in range(len(rv_local_list)):
+            r = (rv_local_list[i][0], rv_local_list[i][1])
+            if (r[0], r[1]) not in count_dict:
+                count_dict[(r[0], r[1])] = 1
+            else:
+                count_dict[(r[0], r[1])] = count_dict[(r[0], r[1])] + 1
+            if r not in self.relevant_vectors_dict.keys():
+                self.relevant_vectors_dict[(r[0], r[1])] = (self.rv_labels[0][i], self.rv_A[0][i])
+                self.rtree_index.insert(int(2*(r[0]*10000 + 2*r[1])), (r[0], r[1], r[0], r[1]))
+        tree_nodes = list(self.rtree_index.intersection((-100000.0, -100000.0, 100000.0, 100000.0)))
+        print("############################################### rv_local_list length = ", len(rv_local_list))
+        print("############################################### rv_global length = ", len(self.relevant_vectors_dict.keys()))
+        if len(rv_local_list) != len(self.relevant_vectors_dict.keys()):
+            print("smt not right")
+            #count_dict = {}
+            #for i in range(len(X)):
+            #    r = (X[i][0], X[i][1])
+            #    if (r[0], r[1]) not in count_dict:
+            #        count_dict[(r[0], r[1])] = 1
+            #    else:
+            #        count_dict[(r[0], r[1])] = count_dict[(r[0], r[1])] + 1
+            #print("smt not right")
         self.prev_X = X_orig.tolist()
         self.prev_y = y_orig.tolist()
         return self
@@ -1549,328 +1145,6 @@ class RVC3(ClassificationARD3):
             neg_dist[i][0] = f_predict_minus[i][0]
             neg_min_idx[i][0] = minus_idx_min
         return f_predict_upperbound, f_predict_upperbound_pos , f_predict_upperbound_neg, neg_coff, neg_dist, neg_min_idx
-
-
-class RVSet():
-    '''
-    Relevance Vector Classifier (Fast Version, uses Sparse Bayesian Learning )
-
-
-    Parameters
-    ----------
-    n_iter: int, optional (DEFAULT = 100)
-        Maximum number of iterations before termination
-
-    tol: float, optional (DEFAULT = 1e-4)
-        If absolute change in precision parameter for weights is below tol, then
-        the algorithm terminates.
-
-    n_iter_solver: int, optional (DEFAULT = 15)
-        Maximum number of iterations before termination of solver
-
-    tol_solver: float, optional (DEFAULT = 1e-4)
-        Convergence threshold for solver (it is used in estimating posterior
-        distribution)
-
-    fit_intercept : bool, optional ( DEFAULT = True )
-        If True will use intercept in the model
-
-    verbose : boolean, optional (DEFAULT = True)
-        Verbose mode when fitting the model
-
-    kernel: str, optional (DEFAULT = 'rbf')
-        Type of kernel to be used (all kernels: ['rbf' | 'poly' | 'sigmoid']
-
-    degree : int, (DEFAULT = 3)
-        Degree for poly kernels. Ignored by other kernels.
-
-    gamma : float, optional (DEFAULT = 1/n_features)
-        Kernel coefficient for rbf and poly kernels, ignored by other kernels
-
-    coef0 : float, optional (DEFAULT = 0.1)
-        Independent term in poly and sigmoid kernels, ignored by other kernels
-
-    kernel_params : mapping of string to any, optional
-        Parameters (keyword arguments) and values for kernel passed as
-        callable object, ignored by other kernels
-
-
-    Attributes
-    ----------
-    coef_ : array, shape = (n_features)
-        Coefficients of the model (mean of posterior distribution)
-
-    lambda_ : float
-       Estimated precisions of weights
-
-    active_ : array, dtype = np.bool, shape = (n_features)
-       True for non-zero coefficients, False otherwise
-
-    sigma_ : array, shape = (n_features, n_features)
-       Estimated covariance matrix of the weights, computed only for non-zero
-       coefficients
-
-
-    References
-    ----------
-    [1] Fast marginal likelihood maximisation for sparse Bayesian models (Tipping & Faul 2003)
-        (http://www.miketipping.com/papers/met-fastsbl.pdf)
-    [2] Analysis of sparse Bayesian learning (Tipping & Faul 2001)
-        (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
-    '''
-
-    def __init__(self, rvset, mean, covar, classes , fixed_intercept=UNKNOWN_PROB, kernel='rbf', degree=2,
-                 gamma=None, coef0=0, kernel_params=None):
-        self.kernel = kernel
-        self.degree = degree
-        self.gamma = gamma
-        self.coef0 = coef0
-        self.kernel_params = kernel_params
-        self.intercept_ = fixed_intercept
-        self.relevant_vectors_ = rvset
-        self.coef_ = mean
-        self.sigma_ = covar
-        self.classes_ = classes
-
-    def _decision_function_active(self,X,coef_,intercept_):
-        ''' Constructs decision function using only relevant features '''
-        #if self.normalize:
-        #    X = (X - self._x_mean[active_]) / self._x_std[active_]
-        decision = safe_sparse_dot(X,coef_) + intercept_
-        return decision
-
-    def decision_function(self, X):
-        '''
-        Computes distance to separating hyperplane between classes. The larger
-        is the absolute value of the decision function further data point is
-        from the decision boundary.
-
-        Parameters
-        ----------
-        X: array-like of size (n_samples_test,n_features)
-           Matrix of explanatory variables
-
-        Returns
-        -------
-        decision: numpy array of size (n_samples_test,)
-           Distance to decision boundary
-        '''
-        X = check_array(X, accept_sparse=False, dtype=np.float64)
-        n_features = self.relevant_vectors_[0].shape[1]
-        if X.shape[1] != n_features:
-            raise ValueError("X has %d features per sample; expecting %d"
-                             % (X.shape[1], n_features))
-        kernel = lambda rvs: get_kernel(X, rvs, self.gamma, self.degree,
-                                        self.coef0, self.kernel, self.kernel_params)
-        decision = []
-        K = []
-        for rv, cf in zip(self.relevant_vectors_, self.coef_):
-            # if there are no relevant vectors => use intercept only
-            if rv.shape[0] == 0:
-                decision.append(np.ones(X.shape[0]) * self.intercept_)
-            else:
-                decision.append(self._decision_function_active(kernel(rv), cf, self.intercept_))
-                K.append(kernel(rv))
-        decision = np.asarray(decision).squeeze().T
-        K = np.array(K[0])
-        #if self.fit_intercept:
-        #    K = np.concatenate((np.ones([K.shape[0], 1]), K), 1)
-        S = self.sigma_[0]
-        # print(K.shape)
-        # covar = np.matmul(np.matmul(K, S), K.T)
-        # var2 = np.diag(covar)
-        var = np.sum(np.matmul(K, S) * K, axis=1)
-        # diff = var - var2
-        return decision, var
-
-    def get_feature(self, X):
-        '''
-        Computes distance to separating hyperplane between classes. The larger
-        is the absolute value of the decision function further data point is
-        from the decision boundary.
-
-        Parameters
-        ----------
-        X: array-like of size (n_samples_test,n_features)
-           Matrix of explanatory variables
-
-        Returns
-        -------
-        decision: numpy array of size (n_samples_test,)
-           Distance to decision boundary
-        '''
-        X = check_array(X, accept_sparse=False, dtype=np.float64)
-        n_features = self.relevant_vectors_[0].shape[1]
-        if X.shape[1] != n_features:
-            raise ValueError("X has %d features per sample; expecting %d"
-                             % (X.shape[1], n_features))
-        kernel = lambda rvs: get_kernel(X, rvs, self.gamma, self.degree,
-                                        self.coef0, self.kernel, self.kernel_params)
-        K = []
-        rv = self.relevant_vectors_[0]
-        if rv.shape[0] != 0:
-            K.append(kernel(rv))
-        K = np.array(K[0])
-        w = self.coef_[0]
-        #if self.fit_intercept:
-        #    K = np.concatenate((np.ones([K.shape[0], 1]), K), 1)
-        mu = self.relevant_vectors_[0]
-        return K, w, mu
-
-    def predict(self, X):
-        '''
-        Estimates target values on test set
-
-        Parameters
-        ----------
-        X: array-like of size (n_samples_test, n_features)
-           Matrix of explanatory variables
-
-        Returns
-        -------
-        y_pred: numpy arra of size (n_samples_test,)
-           Predicted values of targets
-        '''
-        probs, var, _, _ = self.predict_proba(X)
-        indices = np.argmax(probs, axis=1)
-        y_pred = self.classes_[indices]
-        return y_pred
-
-    def predict_proba(self, X):
-        '''
-        Predicts probabilities of targets.
-
-        Theoretical Note
-        ================
-        Current version of method does not use MacKay's approximation
-        to convolution of Gaussian and sigmoid. This results in less accurate
-        estimation of class probabilities and therefore possible increase
-        in misclassification error for multiclass problems (prediction accuracy
-        for binary classification problems is not changed)
-
-        Parameters
-        ----------
-        X: array-like of size (n_samples_test,n_features)
-           Matrix of explanatory variables
-
-        Returns
-        -------
-        probs: numpy array of size (n_samples_test,)
-           Estimated probabilities of target classes
-        '''
-        decision, var = self.decision_function(X)
-        prob = norm.cdf(decision / np.sqrt(var + 1))
-        if prob.ndim == 1:
-            prob = np.vstack([1 - prob, prob]).T
-        prob = prob / np.reshape(np.sum(prob, axis=1), (prob.shape[0], 1))
-        return prob, var, decision, np.sqrt(var + 1)
-
-    #    def predict_proba_grad(self, X, dX):
-    #
-    def predict_upperbound(self, X, c=THRESHOLD):
-        K, w, mu = self.get_feature(X)
-        S = np.abs(self.sigma_[0])
-        # trace = np.trace(S)
-        # sum_col = np.sum(S,axis=1)
-        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
-        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
-        # temp1 = norm.cdf(-0.1)
-        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
-        # upperbound = np.matmul(K, w)
-        # upperbound = upperbound + self.intercept_
-        w2 = w - c * lambda_max_sqrt
-        upperbound = np.matmul(K, w2)
-        upperbound = upperbound + self.intercept_ - c
-        self.corrected_weights = w2
-        self.orig_weights = w
-        upperbound2, pos_term, neg_term, _, _, _ = self.collision_checking(K, mu, w2, X)
-        upperbound2 = upperbound2.flatten()
-        upperbound2 = upperbound2 + self.intercept_ - c
-        upperbound4 = pos_term - 2 * np.sqrt(neg_term * (self.intercept_ - c))
-        # n = np.max(1, (self.intercept_ - c)/neg_term) + 1
-        n = np.array([1 if n_i < 1 else n_i for n_i in (self.intercept_ - c) / neg_term]) + 1
-        n = 1e189 * np.ones(len(upperbound))
-        temp = (c - self.intercept_) / (n - 1)
-        upperbound3 = pos_term[:, 0] - n * np.power(-neg_term[:, 0], 1 / n) * np.power(temp, (n - 1) / n)
-        return upperbound, upperbound2, upperbound3, upperbound4
-
-    def predict_upperbound_line(self, X, A, c=THRESHOLD):
-        K, w, mu = self.get_feature(X)
-        S = np.abs(self.sigma_[0])
-        # trace = np.trace(S)
-        # sum_col = np.sum(S,axis=1)
-        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
-        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
-        # temp1 = norm.cdf(-0.1)
-        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
-        # upperbound = np.matmul(K, w)
-        # upperbound = upperbound + self.intercept_
-        w2 = w - c * lambda_max_sqrt
-        _, pos_term, neg_term, neg_coff, neg_dist, _ = self.collision_checking(K, mu, w2, X)
-        A = A.reshape([1, 2])
-        dist_to_A = get_kernel(X, A, self.gamma, self.degree, self.coef0,
-                               self.kernel, self.kernel_params)
-        upperbound5 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_)) * dist_to_A * neg_dist[0]
-        return upperbound5
-
-    '''
-    def predict_upperbound_line_cs(self, X, A, c=-0.1):
-        K, w, mu = self.get_feature(X)
-        S = np.abs(self.sigma_[0])
-        # trace = np.trace(S)
-        # sum_col = np.sum(S,axis=1)
-        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
-        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
-        # temp1 = norm.cdf(-0.1)
-        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
-        # upperbound = np.matmul(K, w)
-        # upperbound = upperbound + self.intercept_
-        w2 = w - c * lambda_max_sqrt
-        _, pos_term, neg_term, neg_coff, neg_dist, neg_min_idx = self.collision_checking(K, mu, w2, X)
-        A = A.reshape([1,2])
-        dist_to_A = get_kernel( X, A, self.gamma, self.degree, self.coef0,
-                       self.kernel, self.kernel_params)
-        upperbound6 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
-        return upperbound6
-    '''
-
-    def collision_checking(self, K, mu, alpha, X_test):
-        f_predict_plus = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        f_predict_minus = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        f_predict_upperbound = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        f_predict_upperbound_pos = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        f_predict_upperbound_neg = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        neg_coff = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        neg_dist = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        neg_min_idx = np.zeros([X_test.shape[0], 1], dtype=np.float64)
-        minus_apha = alpha[alpha < 0]
-        plus_apha = alpha[alpha > 0]
-        plus_apha_total = np.sum(plus_apha)
-        minus_alpha_total = np.abs(np.sum(minus_apha))
-        for i in range(X_test.shape[0]):
-            G_row = np.zeros([len(alpha), 1])
-            for j in range(len(alpha)):
-                if alpha[j] >= 0:
-                    continue
-                G_row[j] = K[i, j]
-                # G_row[j] = self.kernel(X[j, :], x_test, gamma=alpha[j]/plus_alpha_total) if alpha[j] > 0 else 0
-            # print("total_dist", total_dist)
-            f_predict_minus[i][0] = np.max(G_row)  # minus_alpha_total*np.exp(-self.gamma*total_dist)
-            minus_idx_min = np.argmax(G_row)
-            G_row = np.zeros([len(alpha), 1])
-            for j in range(len(alpha)):
-                if alpha[j] <= 0:
-                    continue
-                G_row[j] = K[i, j]
-            f_predict_plus[i][0] = np.max(G_row)
-            f_predict_upperbound[i][0] = plus_apha_total * f_predict_plus[i][0] + alpha[minus_idx_min] * \
-                                         f_predict_minus[i][0]
-            f_predict_upperbound_pos[i][0] = plus_apha_total * f_predict_plus[i][0]
-            f_predict_upperbound_neg[i][0] = alpha[minus_idx_min] * f_predict_minus[i][0]
-            neg_coff[i][0] = -alpha[minus_idx_min]
-            neg_dist[i][0] = f_predict_minus[i][0]
-            neg_min_idx[i][0] = minus_idx_min
-        return f_predict_upperbound, f_predict_upperbound_pos, f_predict_upperbound_neg, neg_coff, neg_dist, neg_min_idx
 
 
 
