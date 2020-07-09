@@ -309,13 +309,12 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
             mask = (y == pos_class)
             y_bin = np.zeros(y.shape, dtype=np.float64)
             y_bin[mask] = 1
-            coef,bias,active,sigma,lambda_  = self._fit(X,y_bin)
-            self.coef_[i], self.intercept_[i], self.sigma_[i]  = coef, bias, sigma
+            active, lambda_ = self._fit(X,y_bin)
+            self.intercept_[i] = self.fixed_intercept
             self.active_[i], self.lambda_[i] = active, lambda_
-            # in case of binary classification fit only one classifier           
+            # in case of binary classification fit only one classifier
             if n_classes == 2:
                 break  
-        self.coef_      = np.asarray(self.coef_)
         self.intercept_ = np.asarray(self.intercept_)
         self.prev_trained = True
         return self
@@ -387,29 +386,9 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
                 break
         finish_loop = time.time()
         print("___fit_finish_loop ", i, " = ", finish_loop - start)
-
-        Xa,Aa   = X[:,active], A[active]
-        Xa = Xa[active,:]
-        ya = y[active]
-        Mn,Sn,B,t_hat,cholesky = self._posterior_dist(Xa,ya,Aa, keep_prev_mean = False)
-        # in case Sn is inverse of lower triangular matrix of Cholesky decomposition
-        # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
-        if cholesky:
-           Sn = np.dot(Sn.T,Sn) 
-        intercept_ = self.fixed_intercept
-        if self.fit_intercept:
-           n_features -= 1
-           if active[0] == True:
-               intercept_  = Mn[0]
-               Mn          = Mn[1:]               
-           active          = active[1:]
-        coef_           = np.zeros([1,n_features])
-        coef_[0,active] = Mn
-        #if self.prev_trained:
-        #    Sn[0:self.prev_rvcount, 0:self.prev_rvcount] = self.prev_sigma[0]
         finish = time.time()
         print("___fit_finish ", i, " = ", finish - start)
-        return coef_.squeeze(), intercept_, active, Sn, A
+        return active, A
    
         
     def predict(self,X):
@@ -430,7 +409,7 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
         indices = np.argmax(probs, axis = 1)
         y_pred  = self.classes_[indices]
         return y_pred
-        
+
         
     def _decision_function_active(self,X,coef_,active_,intercept_):
         ''' Constructs decision function using only relevant features '''
@@ -524,10 +503,11 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
         if cholesky:
             # Here Sn is inverse of lower triangular matrix, obtained from
             # cholesky decomposition
-            XB.astype(np.float32)
-            Xa.astype(np.float32)
+            #XB.astype(np.float32)
+            #Xa.astype(np.float32)
             XBX = np.matmul(XB, Xa)
             cur21 = time.time()
+            print("_______________cholesky___cur21_ shape ", XB.shape, Xa.shape)
             print("_______________cholesky___cur21_____fit ", cur21 - cur2)
             XBXS = np.matmul(XBX, Sn.T)
             cur22 = time.time()
@@ -821,6 +801,29 @@ class RVC4(ClassificationARD4):
             #    else:
             #        count_dict[(r[0], r[1])] = count_dict[(r[0], r[1])] + 1
             #print("smt not right")
+        ############################## Recalculate weight mean and cov
+            # kernelise features
+        stime_ext = time.time()
+        self.all_rv_X = []
+        all_rv_y = []
+        all_rv_A = []
+        for r in self.relevant_vectors_dict.keys():
+            self.all_rv_X.append([r[0], r[1]])
+            all_rv_y.append(self.relevant_vectors_dict[r][0])
+            all_rv_A.append(self.relevant_vectors_dict[r][1])
+        all_rv_K = get_kernel(self.all_rv_X, self.all_rv_X, self.gamma, self.degree, self.coef0,
+                              self.kernel, self.kernel_params)
+        all_rv_y = np.array(all_rv_y)
+        all_rv_A= np.array(all_rv_A)
+        Mn, Sn, B, t_hat, cholesky = self._posterior_dist(all_rv_K, all_rv_y, all_rv_A, keep_prev_mean=False)
+        # in case Sn is inverse of lower triangular matrix of Cholesky decomposition
+        # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
+        if cholesky:
+            Sn = np.dot(Sn.T, Sn)
+        self.Mn = Mn
+        self.Sn = Sn
+        etime_ext = time.time()
+        print("@@@@@@@@@@@@@@@@@@@@@@@@ EXTRA TIME:", etime_ext - stime_ext)
         self.prev_X = X_orig.tolist()
         self.prev_y = y_orig.tolist()
         return self

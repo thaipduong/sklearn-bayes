@@ -125,9 +125,9 @@ for d in range(0,len(label_seq), 5):#[0, 10]: #len(label_seq)):
     rvecs = np.sum(rvm.active_[0] == True)
     rvm_message = " ====  RVC: time {0}, relevant vectors = {1} \n".format(rvm_time, rvecs)
     print(rvm_message)
-    y_hat = rvm.predict(x)
-    print(classification_report(y, y_hat))
-    print(rvm.sigma_[0].shape)
+    #y_hat = rvm.predict(x)
+    #print(classification_report(y, y_hat))
+    #print(rvm.sigma_[0].shape)
     print(len(rvm.relevant_vectors_[0]))
 
 
@@ -135,8 +135,8 @@ for d in range(0,len(label_seq), 5):#[0, 10]: #len(label_seq)):
     ax.plot(X[Y == 1, 0], X[Y == 1, 1], "ro", markersize=3)
     #plt.pause(1)
     #ax.clear()
-    svrv = rvm.relevant_vectors_[0]
-    w = rvm.coef_[0][rvm.active_[0]]
+    svrv = np.array(rvm.all_rv_X)
+    w = rvm.Mn
     pos_rv = ax2.scatter(svrv[w>0, 0], svrv[w>0, 1], color = 'r', s = 60)
     neg_rv = ax2.scatter(svrv[w < 0, 0], svrv[w < 0, 1], color = 'b', s = 60)
     plt.pause(0.1)
