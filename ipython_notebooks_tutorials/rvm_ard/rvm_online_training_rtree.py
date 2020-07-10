@@ -125,8 +125,8 @@ for d in range(0,len(label_seq), 5):#[0, 10]: #len(label_seq)):
     rvecs = np.sum(rvm.active_[0] == True)
     rvm_message = " ====  RVC: time {0}, relevant vectors = {1} \n".format(rvm_time, rvecs)
     print(rvm_message)
-    #y_hat = rvm.predict(x)
-    #print(classification_report(y, y_hat))
+    y_hat = rvm.predict(x)
+    print(classification_report(y, y_hat))
     #print(rvm.sigma_[0].shape)
     print(len(rvm.relevant_vectors_[0]))
 

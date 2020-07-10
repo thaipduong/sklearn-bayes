@@ -828,6 +828,11 @@ class RVC4(ClassificationARD4):
         self.prev_y = y_orig.tolist()
         return self
 
+    def _decision_function_active(self,X,coef_,intercept_):
+        ''' Constructs decision function using only relevant features '''
+        decision = safe_sparse_dot(X,self.Mn) + intercept_
+        return decision
+
     def decision_function(self, X):
         '''
         Computes distance to separating hyperplane between classes. The larger
@@ -846,7 +851,7 @@ class RVC4(ClassificationARD4):
         '''
         check_is_fitted(self, 'coef_')
         X = check_array(X, accept_sparse=False, dtype=np.float64)
-        n_features = self.relevant_vectors_[0].shape[1]
+        n_features = len(self.all_rv_X[0])#self.relevant_vectors_[0].shape[1]
         if X.shape[1] != n_features:
             raise ValueError("X has %d features per sample; expecting %d"
                              % (X.shape[1], n_features))
@@ -854,23 +859,20 @@ class RVC4(ClassificationARD4):
                                         self.coef0, self.kernel, self.kernel_params)
         decision = []
         K = []
-        for rv, cf, act, b in zip(self.relevant_vectors_, self.coef_, self.active_,
-                                  self.intercept_):
-            # if there are no relevant vectors => use intercept only
-            if rv.shape[0] == 0:
-                decision.append(np.ones(X.shape[0]) * b)
-            else:
-                decision.append(self._decision_function_active(kernel(rv), cf, act, b))
-                K.append(kernel(rv))
+        if len(self.all_rv_X) == 0:
+            decision.append(np.ones(X.shape[0]) * self.intercept_)
+        else:
+            k = kernel(self.all_rv_X)
+            decision.append(self._decision_function_active(k, self.Mn, self.intercept_))
+            K.append(k)
         decision = np.asarray(decision).squeeze().T
         K = np.array(K[0])
         if self.fit_intercept:
             K = np.concatenate((np.ones([K.shape[0], 1]), K), 1)
-        S = self.sigma_[0]
         # print(K.shape)
         # covar = np.matmul(np.matmul(K, S), K.T)
         # var2 = np.diag(covar)
-        var = np.sum(np.matmul(K, S) * K, axis=1)
+        var = np.sum(np.matmul(K, self.Sn) * K, axis=1)
         # diff = var - var2
         return decision, var
 
