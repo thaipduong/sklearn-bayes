@@ -65,13 +65,13 @@ laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq.npz",
 
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
-rvm = RVC4(n_iter = 50, kernel = 'rbf', gamma =1.0)
+rvm = RVC4(n_iter = 100, kernel = 'rbf', gamma =1.0)
 #fig, ax = plt.subplots(figsize=(12,6))
 #fig2, ax2 = plt.subplots(figsize=(12,6))
 fig = plt.figure(figsize=(12,12))
 ax = fig.add_subplot(211)
 ax2 = fig.add_subplot(212)
-for d in range(0,len(label_seq), 5):#[0, 10]: #len(label_seq)):
+for d in range(0,len(label_seq), 10):#[0, 10]: #len(label_seq)):
     ax.clear()
     ax2.clear()
     ax2.set_xlim(-10, 27)
@@ -179,8 +179,9 @@ A = np.array([0.0, 0.0])
 B = np.array([3.5, -0.8])
 #A = np.array([0.0, 0.0])
 #B = np.array([-7.5, 2.5])
-A = np.array([0.0, 0.0])
-A = np.array([3.0, 3.0])
+A = np.array([-4.0, 3.0])
+#A = np.array([-5.0, -15.0])
+#A = np.array([3.0, 3.0])
 B = np.array([3.5, 6.5])
 
 line_seg_x = np.linspace(A[0], B[0], 100)
@@ -237,7 +238,7 @@ for i in range(T):
         plt.scatter(Bx[0], Bx[1], color = "xkcd:red", marker='x', s = 120)
 radius = rvm.get_radius(line_seg, A)
 print("radius", radius)
-svrv = rvm.relevant_vectors_[0]
+svrv = np.array(rvm.all_rv_X)
 pos_rv = plt.scatter(svrv[rvm.corrected_weights>0, 0], svrv[rvm.corrected_weights>0, 1], color = 'r', s = 60)
 neg_rv = plt.scatter(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], color = 'b', s = 60)
 ax = plt.axes()

@@ -284,7 +284,7 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
         # preprocess targets
         check_classification_targets(y)
         self.classes_ = np.unique(y)
-        n_classes = len(self.classes_)
+        n_classes = 2#len(self.classes_)
         if n_classes < 2:
             raise ValueError("Need samples of at least 2 classes"
                              " in the data, but the data contains only one"
@@ -537,7 +537,7 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
         print("_______________sparsity___cur5_____fit ", cur5 - cur4)
         return [si, qi, S, Q]
 
-    def _posterior_dist(self, X, y, A, keep_prev_mean = True):
+    def _posterior_dist(self, X, y, A, keep_prev_mean = True, tol_mul = 1.0):
         '''
         Uses Laplace approximation for calculating posterior distribution
         '''
@@ -554,8 +554,8 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
         # print X.shape
         ##print y.shape
         # print A.shape
-        Mn = fmin_l_bfgs_b(f_full, x0=w_init, pgtol=self.tol_solver,
-                           maxiter=self.n_iter_solver)[0]
+        Mn = fmin_l_bfgs_b(f_full, x0=w_init, pgtol=tol_mul*self.tol_solver,
+                           maxiter=int(self.n_iter_solver/tol_mul))[0]
 
         #bb = f(w_init)
         #aa = f_grad(w_init)
@@ -676,7 +676,7 @@ class RVC4(ClassificationARD4):
         (http://www.miketipping.com/abstracts.htm#Faul:NIPS01)
     '''
     
-    def __init__(self, n_iter = 200, tol = 1e-2, n_iter_solver = 10, tol_solver = 1e-2,
+    def __init__(self, n_iter = 200, tol = 1e-1, n_iter_solver = 50, tol_solver = 1e-3,
                  fit_intercept = INTERCEPT, fixed_intercept = UNKNOWN_PROB, verbose = False, kernel = 'rbf', degree = 2,
                  gamma  = None, coef0  = 0, kernel_params = None):
         super(RVC4,self).__init__(n_iter,tol,n_iter_solver,False,tol_solver,
@@ -710,7 +710,8 @@ class RVC4(ClassificationARD4):
         '''
         X_orig = np.copy(X)
         y_orig = np.copy(y)
-
+        self.cur_X = X_orig.tolist()
+        self.cur_y = y_orig.tolist()
 
         if self.prev_trained:
             #xa = X[0,:].tolist()
@@ -737,8 +738,8 @@ class RVC4(ClassificationARD4):
                 print("New data")
             else:
                 print("Data is the same! Skip...")
-                self.prev_X = X_orig
-                self.prev_y = y_orig
+                #self.prev_X = X_orig
+                #self.prev_y = y_orig
                 return self
             newdatalen = len(Xdiff)
             Xdiff = np.concatenate(Xdiff).reshape((newdatalen,2))
@@ -808,14 +809,14 @@ class RVC4(ClassificationARD4):
         all_rv_y = []
         all_rv_A = []
         for r in self.relevant_vectors_dict.keys():
-            self.all_rv_X.append([r[0], r[1]])
+            self.all_rv_X.append(np.array([r[0], r[1]]))
             all_rv_y.append(self.relevant_vectors_dict[r][0])
             all_rv_A.append(self.relevant_vectors_dict[r][1])
         all_rv_K = get_kernel(self.all_rv_X, self.all_rv_X, self.gamma, self.degree, self.coef0,
                               self.kernel, self.kernel_params)
         all_rv_y = np.array(all_rv_y)
         all_rv_A= np.array(all_rv_A)
-        Mn, Sn, B, t_hat, cholesky = self._posterior_dist(all_rv_K, all_rv_y, all_rv_A, keep_prev_mean=False)
+        Mn, Sn, B, t_hat, cholesky = self._posterior_dist(all_rv_K, all_rv_y, all_rv_A, keep_prev_mean=False, tol_mul = 0.25)
         # in case Sn is inverse of lower triangular matrix of Cholesky decomposition
         # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
         if cholesky:
@@ -824,8 +825,8 @@ class RVC4(ClassificationARD4):
         self.Sn = Sn
         etime_ext = time.time()
         print("@@@@@@@@@@@@@@@@@@@@@@@@ EXTRA TIME:", etime_ext - stime_ext)
-        self.prev_X = X_orig.tolist()
-        self.prev_y = y_orig.tolist()
+        self.prev_X = self.cur_X
+        self.prev_y = self.cur_y
         return self
 
     def _decision_function_active(self,X,coef_,intercept_):
@@ -894,23 +895,17 @@ class RVC4(ClassificationARD4):
         '''
         check_is_fitted(self, 'coef_')
         X = check_array(X, accept_sparse=False, dtype=np.float64)
-        n_features = self.relevant_vectors_[0].shape[1]
+        n_features = len(self.all_rv_X[0])  # self.relevant_vectors_[0].shape[1]
         if X.shape[1] != n_features:
             raise ValueError("X has %d features per sample; expecting %d"
                              % (X.shape[1], n_features))
         kernel = lambda rvs: get_kernel(X, rvs, self.gamma, self.degree,
                                         self.coef0, self.kernel, self.kernel_params)
-        K = []
-        for rv, cf, act, b in zip(self.relevant_vectors_, self.coef_, self.active_,
-                                  self.intercept_):
-            # if there are no relevant vectors => use intercept only
-            if rv.shape[0] != 0:
-                K.append(kernel(rv))
-        K = np.array(K[0])
-        w = self.coef_[0][self.active_[0]]
+        K = kernel(self.all_rv_X)
+        w = self.Mn
         if self.fit_intercept:
             K = np.concatenate((np.ones([K.shape[0], 1]), K), 1)
-        mu = self.relevant_vectors_[0]
+        mu = self.all_rv_X[0]
         return K, w, mu
 
     def predict_proba(self, X):
@@ -948,7 +943,7 @@ class RVC4(ClassificationARD4):
 #
     def predict_upperbound(self, X, c = THRESHOLD):
         K, w, mu = self.get_feature(X)
-        S =  np.abs(self.sigma_[0])
+        S =  np.abs(self.Sn)
         #trace = np.trace(S)
         #sum_col = np.sum(S,axis=1)
         #lambda_max_sqrt = np.sqrt(np.max(sum_col))
@@ -975,7 +970,7 @@ class RVC4(ClassificationARD4):
 
     def predict_upperbound_line(self, X, A, B, e=THRESHOLD):
         K, w, mu = self.get_feature(X)
-        S = np.abs(self.sigma_[0])
+        S = self.Sn
         # trace = np.trace(S)
         # sum_col = np.sum(S,axis=1)
         # lambda_max_sqrt = np.sqrt(np.max(sum_col))
@@ -996,7 +991,7 @@ class RVC4(ClassificationARD4):
         return upperbound5, intersection
     def get_radius(self, X, A, e=THRESHOLD):
         K, w, mu = self.get_feature(X)
-        S = np.abs(self.sigma_[0])
+        S = self.Sn
         # trace = np.trace(S)
         # sum_col = np.sum(S,axis=1)
         # lambda_max_sqrt = np.sqrt(np.max(sum_col))
@@ -1030,7 +1025,7 @@ class RVC4(ClassificationARD4):
     '''
     def check_line(self, s0, alpha, v, e=THRESHOLD, n = 1, tighter_bound = True):
         total_plus = np.sum(alpha[alpha > 0])
-        rvs = self.relevant_vectors_[0]
+        rvs = self.all_rv_X
         tau = None
         for j in range(len(alpha)):
             if alpha[j] < 0:
@@ -1043,11 +1038,14 @@ class RVC4(ClassificationARD4):
                     beta = np.log(n+1) + (n/(n+1))*np.log((e - self.intercept_[0])/n) + np.log(-alpha[k])/(n+1) -np.log(total_plus)
                     # Quadratic conditions
                     a = -n*(v[0]**2 + v[1]**2)*self.gamma
-                    temp1 = n*s0 + rvs[k,:] - (n+1)*rvs[j,:]
+                    m1 = n*s0
+                    m2 = rvs[k]
+                    m3 = (n+1)*rvs[j]
+                    temp1 = n*s0 + rvs[k] - (n+1)*rvs[j]
                     b = -2*np.dot(v,temp1[0])*self.gamma
-                    temp = s0 - rvs[j,:]
+                    temp = s0 - rvs[j]
                     temp2 = np.linalg.norm(temp)**2
-                    c = (-(n+1)*(np.linalg.norm(s0 - rvs[j,:])**2) + np.linalg.norm(s0 - rvs[k,:])**2)*self.gamma - (n+1)*beta
+                    c = (-(n+1)*(np.linalg.norm(s0 - rvs[j])**2) + np.linalg.norm(s0 - rvs[k])**2)*self.gamma - (n+1)*beta
                     delta = b**2 - 4*a*c
                     if delta <= 0:
                         t1 = 100000
@@ -1069,7 +1067,7 @@ class RVC4(ClassificationARD4):
 
     def check_radius(self, s0, alpha, e=THRESHOLD, n = 1, tighter_bound = True):
         total_plus = np.sum(alpha[alpha > 0])
-        rvs = self.relevant_vectors_[0]
+        rvs = self.all_rv_X
         tau = None
         for j in range(len(alpha)):
             if alpha[j] < 0:
@@ -1082,11 +1080,11 @@ class RVC4(ClassificationARD4):
                     beta = np.log(n+1) + (n/(n+1))*np.log((e - self.intercept_[0])/n) + np.log(-alpha[k])/(n+1) -np.log(total_plus)
                     # Quadratic conditions
                     a = -n
-                    temp1 = n*s0 + rvs[k,:] - (n+1)*rvs[j,:]
+                    temp1 = n*s0 + rvs[k] - (n+1)*rvs[j]
                     b = 2*np.linalg.norm(temp1)*np.sqrt(self.gamma)
-                    temp = s0 - rvs[j,:]
+                    temp = s0 - rvs[j]
                     temp2 = np.linalg.norm(temp)**2
-                    c = (-(n+1)*(np.linalg.norm(s0 - rvs[j,:])**2) + np.linalg.norm(s0 - rvs[k,:])**2)*self.gamma - (n+1)*beta
+                    c = (-(n+1)*(np.linalg.norm(s0 - rvs[j])**2) + np.linalg.norm(s0 - rvs[k])**2)*self.gamma - (n+1)*beta
                     delta = b**2 - 4*a*c
                     if delta <= 0:
                         t1 = 100000
