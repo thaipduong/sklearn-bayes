@@ -47,7 +47,7 @@ from sklearn.metrics import mean_squared_error
 
 from sklearn.datasets import make_moons, make_circles
 from sklearn.metrics import classification_report
-
+import pickle
 ''
 # Parameters
 n = 1000
@@ -72,7 +72,7 @@ fig = plt.figure(figsize=(12,12))
 fig2 = plt.figure(figsize=(12,12))
 ax = fig2.add_subplot(111)
 ax2 = fig.add_subplot(111)
-for d in range(0,len(label_seq), 30):#[0, 10]: #len(label_seq)):
+for d in range(0,len(label_seq), 20):#[0, 10]: #len(label_seq)):
     ax.clear()
     ax2.clear()
     #ax2.set_xlim(-10, 27)
@@ -190,3 +190,9 @@ cb.ax.tick_params(labelsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/rosbag_rvmmap.pdf", bbox_inches='tight', pad_inches=0)
 
 plt.show()
+
+
+f = open("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvm.pkl","wb")
+pickle.dump(rvm,f)
+f.close()
+print("Saved file")

@@ -718,7 +718,7 @@ class RVC4(ClassificationARD4):
             #xa2 = X[0, :]
             #a = [7.75, -10.0] not in self.prev_X
             X_mean = np.mean(X, axis=0)
-            nearest_rv = self.rtree_index.nearest((X_mean[0], X_mean[1], X_mean[0], X_mean[1]), 50, objects=True)
+            nearest_rv = self.rtree_index.nearest((X_mean[0], X_mean[1], X_mean[0], X_mean[1]), 200, objects=True)
             local_rv = []
             local_rv_label = []
             local_A = []
