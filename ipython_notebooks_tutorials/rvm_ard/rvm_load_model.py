@@ -21,8 +21,8 @@ f = open("/home/erl/repos/sklearn-bayes/data/results/good5/rosbag_rvm5laser_samp
 #f = open("/home/erl/repos/sklearn-bayes/data/results/good1/rosbag_rvm_good.pkl","rb")
 rvm = pickle.load(f)
 print("Load rvm model successfully:" + str(len(rvm.Mn)) + "relevance vectors")
-#all_rv_X, all_rv_y, all_rv_A = rvm.recover_posterior_dist(tol_factor=0.01)
-#print("Done approx posterior dist using Laplace approx.")
+all_rv_X, all_rv_y, all_rv_A = rvm.recover_posterior_dist(tol_factor=0.01, a_thres=1.0)
+print("Done approx posterior dist using Laplace approx:" + str(len(rvm.Mn)) + "relevance vectors")
 #max_x      = np.array([65,26])#10*np.max(X,axis = 0)
 #min_x      = np.array([-20,-5])#10*np.min(X,axis = 0)
 max_x      = np.array([65.25,26.25])#10*np.max(X,axis = 0)
@@ -43,6 +43,15 @@ threshold = 0.67
 rv_grid_bin = rv_grid > threshold
 
 ratio = int(100*n_grid_x/n_grid_y)
+
+# Plot relevance vectors
+svrv = np.array(rvm.all_rv_X)
+w = rvm.Mn
+plt.figure(figsize=(ratio/10, 10))
+pos_rv = plt.scatter(svrv[w > 0, 0], svrv[w > 0, 1], color='r', s=40)
+neg_rv = plt.scatter(svrv[w < 0, 0], svrv[w < 0, 1], color='b', s=40)
+plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvs.pdf", bbox_inches='tight', pad_inches=0)
+
 # Illustrate collision checking
 plt.figure(figsize=(ratio/10, 10))
 levels = np.arange(0,1, 0.0005)
@@ -51,7 +60,7 @@ cb  = plt.colorbar()
 cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
 cb.ax.tick_params(labelsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvmmap.pdf", bbox_inches='tight', pad_inches=0)
-plt.show()
+
 
 plt.figure(figsize=(ratio/10, 10))
 levels = np.arange(0,1, 0.0005)
@@ -60,7 +69,6 @@ cb  = plt.colorbar()
 cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
 cb.ax.tick_params(labelsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvmmap_bin.pdf", bbox_inches='tight', pad_inches=0)
-plt.show()
 
 gtmap = load_gt_rosbag.get_goundtruth_map()
 rvm_map_bin = np.reshape(rv_grid_bin, (n_grid_y, n_grid_x))
@@ -71,7 +79,7 @@ cb  = plt.colorbar()
 cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
 cb.ax.tick_params(labelsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_gt.pdf", bbox_inches='tight', pad_inches=0)
-plt.show()
+
 print("Loaded groundtruth map...")
 
 print("#################################################################################")
@@ -82,3 +90,4 @@ print("ACCURACY:", 100*(n_grid_y*n_grid_x - error)/(n_grid_y*n_grid_x), "%")
 print("RECALL:", 100*(count_true - tpr_error)/count_true, "%")
 
 print("#################################################################################")
+plt.show()

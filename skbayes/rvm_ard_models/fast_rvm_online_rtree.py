@@ -805,34 +805,22 @@ class RVC4(ClassificationARD4):
         ############################## Recalculate weight mean and cov
             # kernelise features
         stime_ext = time.time()
-        self.all_rv_X = []
-        all_rv_y = []
-        all_rv_A = []
-        for r in self.relevant_vectors_dict.keys():
-            self.all_rv_X.append(np.array([r[0], r[1]]))
-            all_rv_y.append(self.relevant_vectors_dict[r][0])
-            all_rv_A.append(self.relevant_vectors_dict[r][1])
-        all_rv_K = get_kernel(self.all_rv_X, self.all_rv_X, self.gamma, self.degree, self.coef0,
-                              self.kernel, self.kernel_params)
-        all_rv_y = np.array(all_rv_y)
-        all_rv_A= np.array(all_rv_A)
-        Mn, Sn, B, t_hat, cholesky = self._posterior_dist(all_rv_K, all_rv_y, all_rv_A, keep_prev_mean=False, tol_mul = 0.25)
-        # in case Sn is inverse of lower triangular matrix of Cholesky decomposition
-        # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
-        if cholesky:
-            Sn = np.dot(Sn.T, Sn)
-        self.Mn = Mn
-        self.Sn = Sn
+        self.recover_posterior_dist()
         etime_ext = time.time()
         print("@@@@@@@@@@@@@@@@@@@@@@@@ EXTRA TIME:", etime_ext - stime_ext)
         self.prev_X = self.cur_X
         self.prev_y = self.cur_y
         return self
 
-    def recover_posterior_dist(self, tol_factor = 0.25):
+    def recover_posterior_dist(self, tol_factor = 0.1, a_thres = 1.0):
         self.all_rv_X = []
         all_rv_y = []
         all_rv_A = []
+        keys_list = list(self.relevant_vectors_dict.keys())
+        for r in keys_list:
+            if self.relevant_vectors_dict[r][1] > a_thres:
+                self.relevant_vectors_dict.pop(r)
+                self.rtree_index.delete(int(2 * (r[0] * 10000 + 2 * r[1])), (r[0], r[1], r[0], r[1]))
         for r in self.relevant_vectors_dict.keys():
             self.all_rv_X.append(np.array([r[0], r[1]]))
             all_rv_y.append(self.relevant_vectors_dict[r][0])
