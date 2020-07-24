@@ -41,7 +41,6 @@ from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import time
 #from mpl_toolkits import mplot3d
-
 from sklearn.metrics import mean_squared_error
 
 
@@ -52,7 +51,8 @@ import pickle
 # Parameters
 n = 1000
 test_proportion = 0.1
-
+RUN = 5
+filename = "laser_samples_seq_25pos50negres_inflated"
 # create dataset & split into train/test parts
 #Xx,Yy   = make_circles(n_samples = n, noise = 0.2, random_state = 1)
 
@@ -61,7 +61,7 @@ test_proportion = 0.1
 #uninflated_laser_Yy = uninflated_laser_data['labels']
 #uninflated_laser_Yy[uninflated_laser_Yy < 0] = 0
 
-laser_data = np.load("/home/erl/repos/sklearn-bayes/data/laser_samples_seq_25pos50negres.npz", allow_pickle=True,  encoding='latin1')
+laser_data = np.load("/home/erl/repos/sklearn-bayes/data/"+ filename + ".npz", allow_pickle=True,  encoding='latin1')
 res = 0.25
 label_seq = laser_data['label_seg']
 point_seq = laser_data['point_seq']
@@ -187,12 +187,12 @@ cb  = plt.colorbar()
 #cb.set_ticks(0.075 + np.array([0.0, 0.15, 0.3, 0.45, 0.60, 0.75, 0.90]))
 cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
 cb.ax.tick_params(labelsize=20)
-plt.savefig("/home/erl/repos/sklearn-bayes/figs/rosbag_rvmmap.pdf", bbox_inches='tight', pad_inches=0)
+#plt.savefig("/home/erl/repos/sklearn-bayes/figs/rosbag_rvmmap.pdf", bbox_inches='tight', pad_inches=0)
 
 plt.show()
 
 
-f = open("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvm.pkl","wb")
+f = open("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvm"+str(RUN)+ filename + ".pkl","wb")
 pickle.dump(rvm,f)
 f.close()
 print("Saved file")

@@ -829,6 +829,28 @@ class RVC4(ClassificationARD4):
         self.prev_y = self.cur_y
         return self
 
+    def recover_posterior_dist(self, tol_factor = 0.25):
+        self.all_rv_X = []
+        all_rv_y = []
+        all_rv_A = []
+        for r in self.relevant_vectors_dict.keys():
+            self.all_rv_X.append(np.array([r[0], r[1]]))
+            all_rv_y.append(self.relevant_vectors_dict[r][0])
+            all_rv_A.append(self.relevant_vectors_dict[r][1])
+        all_rv_K = get_kernel(self.all_rv_X, self.all_rv_X, self.gamma, self.degree, self.coef0,
+                              self.kernel, self.kernel_params)
+        all_rv_y = np.array(all_rv_y)
+        all_rv_A = np.array(all_rv_A)
+        Mn, Sn, B, t_hat, cholesky = self._posterior_dist(all_rv_K, all_rv_y, all_rv_A, keep_prev_mean=False,
+                                                          tol_mul=tol_factor)
+        # in case Sn is inverse of lower triangular matrix of Cholesky decomposition
+        # compute covariance using formula Sn  = np.dot(Rinverse.T , Rinverse)
+        if cholesky:
+            Sn = np.dot(Sn.T, Sn)
+        self.Mn = Mn
+        self.Sn = Sn
+        return self.all_rv_X, all_rv_y, all_rv_A
+
     def _decision_function_active(self,X,coef_,intercept_):
         ''' Constructs decision function using only relevant features '''
         decision = safe_sparse_dot(X,self.Mn) + intercept_
