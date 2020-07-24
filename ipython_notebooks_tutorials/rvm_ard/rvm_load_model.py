@@ -16,13 +16,13 @@ from sklearn.datasets import make_moons, make_circles
 from sklearn.metrics import classification_report
 import pickle
 
-f = open("/home/erl/repos/sklearn-bayes/data/results/good5/rosbag_rvm5laser_samples_seq_25pos50negres_inflated.pkl","rb")
+f = open("/home/erl/repos/sklearn-bayes/data/results/good6/rosbag_rvm6laser_samples_seq_25pos50negres_inflated.pkl","rb")
 #f = open("/home/erl/repos/sklearn-bayes/data/results/good4/rosbag_rvm4.pkl","rb")
 #f = open("/home/erl/repos/sklearn-bayes/data/results/good1/rosbag_rvm_good.pkl","rb")
 rvm = pickle.load(f)
 print("Load rvm model successfully:" + str(len(rvm.Mn)) + "relevance vectors")
-all_rv_X, all_rv_y, all_rv_A = rvm.recover_posterior_dist(tol_factor=0.01, a_thres=1.0)
-print("Done approx posterior dist using Laplace approx:" + str(len(rvm.Mn)) + "relevance vectors")
+#all_rv_X, all_rv_y, all_rv_A = rvm.recover_posterior_dist(tol_factor=0.01, a_thres=1.0)
+#print("Done approx posterior dist using Laplace approx:" + str(len(rvm.Mn)) + "relevance vectors")
 #max_x      = np.array([65,26])#10*np.max(X,axis = 0)
 #min_x      = np.array([-20,-5])#10*np.min(X,axis = 0)
 max_x      = np.array([65.25,26.25])#10*np.max(X,axis = 0)
@@ -39,7 +39,7 @@ Xgrid[:,1] = np.reshape(x2,(n_grid_x*n_grid_y,))
 
 rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
 rv_grid = rv_grid[:,1]
-threshold = 0.67
+threshold = 0.6
 rv_grid_bin = rv_grid > threshold
 
 ratio = int(100*n_grid_x/n_grid_y)
