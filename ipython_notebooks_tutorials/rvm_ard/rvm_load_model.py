@@ -15,7 +15,9 @@ from sklearn.metrics import mean_squared_error
 from sklearn.datasets import make_moons, make_circles
 from sklearn.metrics import classification_report
 import pickle
-
+filename = "laser_samples_seq_25pos50negres_inflated"
+laser_data = np.load("/home/erl/repos/sklearn-bayes/data/"+ filename + ".npz", allow_pickle=True,  encoding='latin1')
+robot_xy = laser_data['robot_xy']
 f = open("/home/erl/repos/sklearn-bayes/data/results/good6/rosbag_rvm6laser_samples_seq_25pos50negres_inflated.pkl","rb")
 #f = open("/home/erl/repos/sklearn-bayes/data/results/good4/rosbag_rvm4.pkl","rb")
 #f = open("/home/erl/repos/sklearn-bayes/data/results/good1/rosbag_rvm_good.pkl","rb")
@@ -39,7 +41,7 @@ Xgrid[:,1] = np.reshape(x2,(n_grid_x*n_grid_y,))
 
 rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
 rv_grid = rv_grid[:,1]
-threshold = 0.6
+threshold = 0.65
 rv_grid_bin = rv_grid > threshold
 
 ratio = int(100*n_grid_x/n_grid_y)
@@ -57,7 +59,7 @@ plt.figure(figsize=(ratio/10, 10))
 levels = np.arange(0,1, 0.0005)
 plt.contourf(X1, X2, np.reshape(rv_grid, (n_grid_y, n_grid_x)), cmap='coolwarm')
 cb  = plt.colorbar()
-cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+#cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
 cb.ax.tick_params(labelsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvmmap.pdf", bbox_inches='tight', pad_inches=0)
 
@@ -75,9 +77,10 @@ rvm_map_bin = np.reshape(rv_grid_bin, (n_grid_y, n_grid_x))
 plt.figure(figsize=(ratio/10, 10))
 levels = np.arange(0,1, 0.0005)
 plt.contourf(X1, X2, np.reshape(gtmap, (n_grid_y, n_grid_x)), cmap="Greys")
-cb  = plt.colorbar()
-cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
-cb.ax.tick_params(labelsize=20)
+for i in range(1, len(robot_xy)-1):
+	plt.scatter(robot_xy[i, 0]-1, robot_xy[i, 1], color='b', s=10)
+plt.scatter(robot_xy[0, 0]-1, robot_xy[0, 1], color='r', s=120)
+plt.scatter(robot_xy[-1, 0]-1, robot_xy[-1, 1], color='g', s=120)
 plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_gt.pdf", bbox_inches='tight', pad_inches=0)
 
 print("Loaded groundtruth map...")
