@@ -41,7 +41,7 @@ Xgrid[:,1] = np.reshape(x2,(n_grid_x*n_grid_y,))
 
 rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
 rv_grid = rv_grid[:,1]
-threshold = 0.65
+threshold = 0.8
 rv_grid_bin = rv_grid > threshold
 
 ratio = int(100*n_grid_x/n_grid_y)
@@ -73,6 +73,7 @@ cb.ax.tick_params(labelsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/data/results/rosbag_rvmmap_bin.pdf", bbox_inches='tight', pad_inches=0)
 
 gtmap = load_gt_rosbag.get_goundtruth_map()
+gtinterior = load_gt_rosbag.get_interior(gtmap)
 rvm_map_bin = np.reshape(rv_grid_bin, (n_grid_y, n_grid_x))
 plt.figure(figsize=(ratio/10, 10))
 levels = np.arange(0,1, 0.0005)
@@ -87,9 +88,10 @@ print("Loaded groundtruth map...")
 
 print("#################################################################################")
 drift_allowance = 2
-error = load_gt_rosbag.compare(gtmap, rvm_map_bin, drift_allowance = drift_allowance)
+error, total = load_gt_rosbag.compare(gtmap, rvm_map_bin, drift_allowance = drift_allowance, excluded = gtinterior)
 tpr_error, count_true = load_gt_rosbag.compare_tpr(gtmap, rvm_map_bin, drift_allowance = drift_allowance)
-print("ACCURACY:", 100*(n_grid_y*n_grid_x - error)/(n_grid_y*n_grid_x), "%")
+print(error, total, n_grid_y*n_grid_x, count_true, tpr_error)
+print("ACCURACY:", 100*(total - error)/total, "%")
 print("RECALL:", 100*(count_true - tpr_error)/count_true, "%")
 
 print("#################################################################################")

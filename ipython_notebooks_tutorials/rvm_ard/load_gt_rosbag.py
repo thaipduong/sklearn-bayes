@@ -111,8 +111,56 @@ def remove_interior(ground_truth):
     ground_truth[90:95, 56] = 0
     ground_truth[106:114, 56] = 0
 
+def get_interior(ground_truth):
+    interior = np.zeros(ground_truth.shape)
+    interior[5:8, 57:67] = 1
+    interior[5:12, 107:117] = 1
+    interior[5:12, 188:198] = 1
+    interior[5:12, 226:231] = 1
 
+    interior[29:38, 57:67] = 1
+    interior[33:38, 57:122] = 1
+    interior[25:38, 107:117] = 1
 
+    interior[33:38, 141:205] = 1
+    interior[25:33, 188:198] = 1
+
+    interior[33:38, 226:261] = 1
+
+    interior[48:51, 79:97] = 1
+    interior[48:51, 141:159] = 1
+    interior[48:51, 226:242] = 1
+
+    interior[61:66, 57:121] = 1
+    interior[67:78, 104:107] = 1
+
+    interior[61:66, 141:177] = 1
+    interior[67:78, 152:159] = 1
+
+    interior[61:66, 197:205] = 1
+    interior[67:78, 207:210] = 1
+
+    interior[61:66, 225:261] = 1
+    interior[61:78, 255:261] = 1
+
+    interior[106:115, 191:260] = 1
+
+    interior[78:89, 229:236] = 1
+    interior[78:89, 185:188] = 1
+    interior[78:89, 126:133] = 1
+    interior[78:89, 82:85] = 1
+
+    interior[90:95, 56:64] = 1
+    interior[90:95, 85:92] = 1
+    interior[90:95, 113:121] = 1
+    interior[90:95, 141:149] = 1
+    interior[90:95, 169:177] = 1
+    interior[90:95, 197:205] = 1
+    interior[90:95, 226:233] = 1
+    interior[90:95, 254:261] = 1
+
+    interior[106:114, 56:62] = 1
+    return interior
 
 
 
@@ -126,10 +174,24 @@ def get_goundtruth_map():
 	return groundtruth_map
 
 
-def compare(map1, map2, drift_allowance = 0):
+def compare(map1, map2, drift_allowance = 0, excluded = None):
+    maxx1 = 0
+    maxx2 = 0
+    minx1 = map1.shape[0]
+    minx2 = map1.shape[1]
+    for i in range(map1.shape[0]):
+        for j in range(map1.shape[1]):
+            if map1[i, j] > 0:
+                minx1 = min(minx1, i)
+                minx2 = min(minx2, j)
+                maxx1 = max(maxx1, i)
+                maxx2 = max(maxx2, j)
+    total = (maxx1 - minx1)*(maxx2 - minx2)
     error = 0
     for i in range(map1.shape[0]):
         for j in range(map1.shape[1]):
+            if excluded is not None and excluded[i,j] > 0:
+                continue
             correct = False
             if map1[i,j] == map2[i, j]:
                 correct = True
@@ -144,7 +206,9 @@ def compare(map1, map2, drift_allowance = 0):
                     correct = True
             if not correct:
                 error = error + 1
-    return error
+    if excluded is not None:
+        total = total - np.sum(excluded)
+    return error, total
 
 def compare_tpr(map1, map2, drift_allowance = 0):
     error = 0

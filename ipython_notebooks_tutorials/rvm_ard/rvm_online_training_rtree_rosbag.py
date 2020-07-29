@@ -51,7 +51,7 @@ import pickle
 # Parameters
 n = 1000
 test_proportion = 0.1
-RUN = 6
+RUN = 7
 filename = "laser_samples_seq_25pos50negres_inflated"
 # create dataset & split into train/test parts
 #Xx,Yy   = make_circles(n_samples = n, noise = 0.2, random_state = 1)

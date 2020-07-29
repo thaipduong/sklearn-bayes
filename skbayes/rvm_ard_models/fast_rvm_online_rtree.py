@@ -571,7 +571,8 @@ class ClassificationARD4(BaseEstimator,LinearClassifierMixin):
         #s = norm.cdf(Xm)
         t = (y - 0.5) * 2
         eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-300
-        B = eta * (Xm_nobias + eta)
+        #B = eta * (Xm_nobias + eta)
+        B = eta * (Xm + eta)
         # B         = logistic._pdf(Xm) # avoids underflow
         S = np.dot(X.T * B, X)
         np.fill_diagonal(S, np.diag(S) + A)
