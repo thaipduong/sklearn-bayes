@@ -815,8 +815,8 @@ class RVC4(ClassificationARD4):
 
     def recover_posterior_dist(self, tol_factor = 0.1, a_thres = 1.0):
         self.all_rv_X = []
-        all_rv_y = []
-        all_rv_A = []
+        self.all_rv_y = []
+        self.all_rv_A = []
         keys_list = list(self.relevant_vectors_dict.keys())
         for r in keys_list:
             if self.relevant_vectors_dict[r][1] > a_thres:
@@ -824,12 +824,12 @@ class RVC4(ClassificationARD4):
                 self.rtree_index.delete(int(2 * (r[0] * 10000 + 2 * r[1])), (r[0], r[1], r[0], r[1]))
         for r in self.relevant_vectors_dict.keys():
             self.all_rv_X.append(np.array([r[0], r[1]]))
-            all_rv_y.append(self.relevant_vectors_dict[r][0])
-            all_rv_A.append(self.relevant_vectors_dict[r][1])
+            self.all_rv_y .append(self.relevant_vectors_dict[r][0])
+            self.all_rv_A.append(self.relevant_vectors_dict[r][1])
         all_rv_K = get_kernel(self.all_rv_X, self.all_rv_X, self.gamma, self.degree, self.coef0,
                               self.kernel, self.kernel_params)
-        all_rv_y = np.array(all_rv_y)
-        all_rv_A = np.array(all_rv_A)
+        all_rv_y = np.array(self.all_rv_y)
+        all_rv_A = np.array(self.all_rv_A)
         Mn, Sn, B, t_hat, cholesky = self._posterior_dist(all_rv_K, all_rv_y, all_rv_A, keep_prev_mean=False,
                                                           tol_mul=tol_factor)
         # in case Sn is inverse of lower triangular matrix of Cholesky decomposition

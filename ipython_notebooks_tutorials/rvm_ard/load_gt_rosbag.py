@@ -186,28 +186,30 @@ def compare(map1, map2, drift_allowance = 0, excluded = None):
                 minx2 = min(minx2, j)
                 maxx1 = max(maxx1, i)
                 maxx2 = max(maxx2, j)
-    total = (maxx1 - minx1)*(maxx2 - minx2)
+    total = (maxx1 - minx1 + 1)*(maxx2 - minx2 + 1)
     error = 0
-    for i in range(map1.shape[0]):
-        for j in range(map1.shape[1]):
+    for i in range(minx1, maxx1+1):#(map1.shape[0]):
+        for j in range(minx2, maxx2+1):#(map1.shape[1]):
             if excluded is not None and excluded[i,j] > 0:
                 continue
             correct = False
-            if map1[i,j] == map2[i, j]:
+            if abs(map1[i,j] - map2[i, j]) < 0.1:
                 correct = True
             else:
                 count = 0
                 for k in range(-drift_allowance, drift_allowance+1):
                     for l in range(-drift_allowance, drift_allowance+1):
                         if 0<= i + k < map1.shape[0] and 0<= j + l < map1.shape[1]:
-                            if map1[i,j] == map2[i+k, j+l]:
+                            if abs(map1[i,j] - map2[i+k, j+l]) < 0.1:
                                 count = count + 1
                 if 0< count:
                     correct = True
             if not correct:
                 error = error + 1
+    print(total)
     if excluded is not None:
         total = total - np.sum(excluded)
+    print(total)
     return error, total
 
 def compare_tpr(map1, map2, drift_allowance = 0):
