@@ -24,6 +24,7 @@
 
 from sklearn.utils.estimator_checks import check_estimator
 from skbayes.rvm_ard_models import RVR,RVC
+
 #check_estimator(RVC)
 #check_estimator(RVR)
 print("All test are passed ...")
@@ -41,10 +42,11 @@ from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 import time
 #from mpl_toolkits import mplot3d
-
+from scipy.stats import norm
 from sklearn.metrics import mean_squared_error
 
-
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
 from sklearn.datasets import make_moons, make_circles
 from sklearn.metrics import classification_report
 
@@ -104,13 +106,13 @@ t1 = time.time()
 rvm.fit(X,Y)
 t2 = time.time()
 rvm_time = t2 - t1
-print "RVC time:" + str(rvm_time)
+print("RVC time:" + str(rvm_time))
 
 rvecs = np.sum(rvm.active_[0]==True)
 rvm_message = " ====  RVC: time {0}, relevant vectors = {1} \n".format(rvm_time,rvecs)
-print rvm_message
+print(rvm_message)
 y_hat = rvm.predict(x)
-print classification_report(y,y_hat)
+print(classification_report(y,y_hat))
 
 # create grid
 #n_grid = 500
@@ -134,6 +136,10 @@ Xgrid[:,0] = np.reshape(x1,(n_grid**2,))
 Xgrid[:,1] = np.reshape(x2,(n_grid**2,))
 
 rv_grid, var_grid, _, _ = rvm.predict_proba(Xgrid)
+THRESHOLD = -0.01#0.6#-0.01#-0.01
+threshold_prob = norm.cdf(THRESHOLD)
+
+########################################################################################################################
 #A = np.array([-1.1, 0.9])
 #B = np.array([0.0, -2.0])
 A = np.array([0.0, 0.0])
@@ -147,26 +153,27 @@ line_seg_x = np.linspace(A[0], B[0], 100)
 line_seg_y = np.linspace(A[1], B[1], 100)
 line_seg = np.vstack((line_seg_x, line_seg_y)).transpose()
 
-upper_line, upper_line2, upper_line3, upper_line4 = rvm.predict_upperbound(line_seg)
+upper_line, upper_line2, upper_line3, upper_line4, _ = rvm.predict_upperbound(line_seg)
 rv_line, var_line, num, denom = rvm.predict_proba(line_seg)
 upper_line5 = rvm.predict_upperbound_line(line_seg, A)
 line_seg_rev = np.flipud(line_seg)
 upper_line6 = rvm.predict_upperbound_line(line_seg_rev, B)
 upper_line6 = np.flip(upper_line6)
-upper_grid, upper_grid2, upper_grid3, upper_grid4 = rvm.predict_upperbound(Xgrid)
 upper_line7 = np.minimum(upper_line5, upper_line6)
 
-plt.figure(figsize=(12, 8))
+
+
+plt.figure(figsize=(12, 4))
 #plt.plot(rv_line[:,1] - 0.5, label="GT")
 a = np.where(upper_line7 >0)[0]
 
-THRESHOLD = -0.01
+
 gt = num - THRESHOLD*denom
 t = np.linspace(0,1, 100)
 plt.plot(t, gt, label="$G_1(x)$", linewidth=4)
 plt.plot(t, upper_line, label="$G_2(x)$", linestyle="dashed", linewidth=4)
 #plt.plot(upper_line2, label="Fastron bound", linestyle = "dotted")
-plt.plot(t, upper_line4, label="$G_3(x)$",  linestyle="dotted", linewidth=4)
+plt.plot(t, upper_line3, label="$G_3(x)$",  linestyle="dotted", linewidth=4)
 #plt.plot(upper_line7, label="triangle bound",  linestyle="dashdot")
 #plt.plot(upper_line6, label="triangle bound",  linestyle="dashdot")
 plt.plot(t, np.zeros(100), label="zero",  linestyle="dashdot", linewidth=4)
@@ -178,10 +185,62 @@ plt.xticks(fontsize= 20)
 plt.yticks(fontsize= 20)
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/bounds_free.pdf", bbox_inches='tight', pad_inches=0)
 
+
+##################################################################
+
+#A = np.array([0.0, 0.0])
+#B = np.array([3.5, -0.8])
+#A = np.array([0.0, 0.0])
+#B = np.array([-7.5, 2.5])
+A = np.array([0.0, 0.0])
+B = np.array([3.5, 6.5])
+
+line_seg_x = np.linspace(A[0], B[0], 100)
+line_seg_y = np.linspace(A[1], B[1], 100)
+line_seg = np.vstack((line_seg_x, line_seg_y)).transpose()
+
+upper_line, upper_line2, upper_line3, upper_line4, _ = rvm.predict_upperbound(line_seg)
+rv_line, var_line, num, denom = rvm.predict_proba(line_seg)
+upper_line5 = rvm.predict_upperbound_line(line_seg, A)
+line_seg_rev = np.flipud(line_seg)
+upper_line6 = rvm.predict_upperbound_line(line_seg_rev, B)
+upper_line6 = np.flip(upper_line6)
+upper_line7 = np.minimum(upper_line5, upper_line6)
+
+
+
+plt.figure(figsize=(12, 4))
+#plt.plot(rv_line[:,1] - 0.5, label="GT")
+a = np.where(upper_line7 >0)[0]
+
+
+gt = num - THRESHOLD*denom
+t = np.linspace(0,1, 100)
+plt.plot(t, gt, label="$G_1(x)$", linewidth=4)
+plt.plot(t, upper_line, label="$G_2(x)$", linestyle="dashed", linewidth=4)
+#plt.plot(upper_line2, label="Fastron bound", linestyle = "dotted")
+plt.plot(t, upper_line3, label="$G_3(x)$",  linestyle="dotted", linewidth=4)
+#plt.plot(upper_line7, label="triangle bound",  linestyle="dashdot")
+#plt.plot(upper_line6, label="triangle bound",  linestyle="dashdot")
+plt.plot(t, np.zeros(100), label="zero",  linestyle="dashdot", linewidth=4)
+ax = plt.axes()
+# Setting the background color
+ax.set_facecolor("lightgrey")
+plt.legend(fontsize = 20)
+plt.xticks(fontsize= 20)
+plt.yticks(fontsize= 20)
+plt.savefig("/home/erl/repos/sklearn-bayes/figs/bounds_colliding.pdf", bbox_inches='tight', pad_inches=0)
+
+
+########################################################################################################################
+
 rv_grid = rv_grid[:,1]
+upper_grid, upper_grid2, upper_grid3, upper_grid4, upper_grid5 = rvm.predict_upperbound(Xgrid)
 #plt.show()
 
-plt.figure(figsize = (12,8))
+
+
+plt.figure(figsize = (10,8.0))
 
 plt.plot(X[Y==1,0],X[Y==1,1],"rs", markersize = 4, label = 'occupied')
 plt.plot(X[Y==0,0],X[Y==0,1],"bo", markersize = 4, label = 'free')
@@ -191,13 +250,14 @@ ax.set_facecolor("lightgrey")
 plt.legend(fontsize = 20)
 plt.xticks(fontsize= 20)
 plt.yticks(fontsize= 20)
-plt.xlim(min_x[0],max_x[0])
+plt.xlim(-9.5,max_x[0]-1)#(min_x[0],max_x[0])
 #plt.ylim(min_x[1]+4,max_x[1]-2)
-plt.ylim(min_x[1],max_x[1])
+plt.ylim(-6.0, max_x[1])#(min_x[1],max_x[1])
+print("ratio =", (max_x[1] + 6.0)/(max_x[0] +8.5))
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/inflated_samples.pdf", bbox_inches='tight', pad_inches=0)
 #plt.show()
 ''''''
-plt.figure(figsize = (12,8))
+plt.figure(figsize = (10,8.0))
 plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==0,0],uninflated_laser_Xx[uninflated_laser_Yy==0,1],"bo", markersize = 4, label = 'free')
 plt.plot(uninflated_laser_Xx[uninflated_laser_Yy==1,0],uninflated_laser_Xx[uninflated_laser_Yy==1,1],"rs", markersize = 4, label = 'occupied')
 plt.legend(fontsize = 20)
@@ -206,26 +266,29 @@ plt.yticks(fontsize= 20)
 ax = plt.axes()
 # Setting the background color
 ax.set_facecolor("lightgrey")
-plt.xlim(min_x[0],max_x[0])
+plt.xlim(-9.5,max_x[0]-1)
 #plt.ylim(min_x[1]+4,max_x[1]-2)
-plt.ylim(min_x[1],max_x[1])
+plt.ylim(-6.0, max_x[1])#(min_x[1],max_x[1])(min_x[1],max_x[1])
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/uninflated_samples.pdf", bbox_inches='tight', pad_inches=0)
 
 
 
 ''''''
-plt.figure(figsize = (12,8))
+plt.figure(figsize = (12.4,8.0))
 levels = np.arange(0,1, 0.0005)
-plt.contourf(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), cmap='coolwarm')
+rv_grid[rv_grid > 0.95] = 1.0
+rv_grid[rv_grid < 0.05] = 0.0
+plt.contourf(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)),20, cmap='coolwarm')
 
 #bounds = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 #norm = plt.colors.Normalize(vmin=0, vmax=1)
-cb  = plt.colorbar()
 
-#cb.set_ticks(0.075 + np.array([0.0, 0.15, 0.3, 0.45, 0.60, 0.75, 0.90]))
-cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+cb  = plt.colorbar(ticks=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
 cb.ax.tick_params(labelsize=20)
-plt.contour(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), levels=[0.5], cmap="Greys_r")
+#cb.set_ticks(0.075 + np.array([0.0, 0.15, 0.3, 0.45, 0.60, 0.75, 0.90]))
+#cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+#cb.ax.tick_params(labelsize=20)
+plt.contour(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), levels=[threshold_prob], cmap="Greys_r")
 svrv = rvm.relevant_vectors_[0]
 point_label = "relevant vec."
 
@@ -239,41 +302,42 @@ plt.xticks(fontsize=20)
 plt.yticks(fontsize=20)
 #plt.xlabel("x1", fontsize=20)
 #plt.ylabel("x2", fontsize=20)
-plt.xlim(min_x[0]+3,max_x[0]-2)
+plt.xlim(min_x[0],max_x[0])
 #plt.ylim(min_x[1]+4,max_x[1]-2)
-plt.ylim(min_x[1],max_x[1])
+plt.ylim(min_x[1],max_x[1])#(-6.0, max_x[1])#(min_x[1],max_x[1])(min_x[1],max_x[1])
 plt.legend(fontsize=20)
 plt.savefig("/home/erl/repos/sklearn-bayes/figs/rvm_models.pdf", bbox_inches='tight', pad_inches=0)
 plt.show()
 
 
-models  = [rv_grid, upper_grid, upper_grid2, upper_grid4]
-model_names = ["RVC", "upperbound", "upperbound_fastron", "upperbound AMGM"]
+models  = [rv_grid, upper_grid, upper_grid2, upper_grid4, upper_grid5]
+model_names = ["RVC", "upperbound", "upperbound_fastron", "upperbound AMGM", "compare bounds"]
+line_width = 3
 #plt.plot(rvm.relevant_vectors_,Y[rvm.active_],"co",markersize = 12,  label = "relevant vectors")
 for model, model_name in zip(models, model_names):
     plt.figure(figsize = (12,8))
     levels = np.arange(0,1, 0.0005)
     #ax.contour3D(X1,X2,np.reshape(model,(n_grid,n_grid)), 100, cmap='coolwarm',
     #                   linewidth=0, antialiased=False)
-    plt.contourf(X1, X2, np.reshape(model, (n_grid, n_grid)), cmap='coolwarm')
-    cb  = plt.colorbar()
+    plt.contourf(X1, X2, np.reshape(model, (n_grid, n_grid)), 20, cmap='coolwarm')
+    cb = plt.colorbar(ticks=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    #cb  = plt.colorbar()
     cb.ax.tick_params(labelsize=20)
     if model_name == "RVC":
-        cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
-        arr1 = plt.arrow(0, 0,  3.5, 6.5, head_width=0.3,
-                         head_length=0.3, fc="xkcd:cyan", ec="xkcd:cyan", width = 0.1, label="colliding segment")
-        arr2 = plt.arrow(0, 0, 3.5, -0.8, head_width=0.3,
-                         head_length=0.3, fc="xkcd:orange", ec="xkcd:orange", width=0.1, label="free segment")
-        cs2 = plt.contour(X1, X2, np.reshape(upper_grid, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles="dashed", label="$G_2(x)$")
-        plt.contour(X1, X2, np.reshape(upper_grid2, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles = "dotted", label="$G_2(x)$")
+        #cb.ax.set_yticklabels(['0.0', '0.14', '0.28', '0.42', '0.56', '0.70', '0.85', '1.0'])
+        #arr1 = plt.arrow(0, 0,  3.5, 6.5, head_width=0.5,
+        #                 head_length=0.3, fc="xkcd:green", ec="xkcd:green", width = 0.2, label="colliding segment")
+        #arr2 = plt.arrow(0, 0, 3.5, -0.8, head_width=0.5,
+        #                 head_length=0.3, fc="xkcd:orange", ec="xkcd:orange", width=0.2, label="free segment")
+        cs2 = plt.contour(X1, X2, np.reshape(upper_grid, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles="dashed", label="$G_2(x)$", linewidths=line_width)
+        #plt.contour(X1, X2, np.reshape(upper_grid2, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles = "dotted", label="$G_2(x)$", linewidths=line_width)
         #plt.contour(X1, X2, np.reshape(upper_grid3, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
         #            linestyles="solid")
         cs3 = plt.contour(X1, X2, np.reshape(upper_grid4, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
-                    linestyles="dashdot", label="$G_3(x)$")
-        cs1 = plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.4945], cmap="Greys_r", label="$G_1(x)$")
-
+                    linestyles="dashdot", label="$G_3(x)$", linewidths=line_width)
+        cs1 = plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[threshold_prob], linestyles = "dotted", cmap="Greys_r", label="$G_1(x)$", linewidths=line_width)
     else:
-        plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r")
+        plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linewidths=line_width)
 
 
     # plot 'support' or 'relevant' vectors
@@ -299,6 +363,12 @@ for model, model_name in zip(models, model_names):
     #plt.title(title, fontsize = 20)
     plt.xticks(fontsize=20)
     plt.yticks(fontsize=20)
+    # plt.xlabel("x1", fontsize=20)
+    # plt.ylabel("x2", fontsize=20)
+    plt.xlim(min_x[0], max_x[0])
+    # plt.ylim(min_x[1]+4,max_x[1]-2)
+    plt.ylim(min_x[1], max_x[1])
+    plt.legend(fontsize=20)
     #plt.xlabel("x1", fontsize = 20)
     #plt.ylabel("x2", fontsize = 20)
 
@@ -306,9 +376,57 @@ for model, model_name in zip(models, model_names):
         h1, _ = cs1.legend_elements()
         h2, _ = cs2.legend_elements()
         h3, _ = cs3.legend_elements()
-        plt.legend([pos_rv, neg_rv, h1[0], h2[0], h3[0],arr1, arr2 ], \
-                   ['pos. vec.', 'neg. vec.', '$G_1(x) = 0$', '$G_2(x) = 0$', '$G_3(x) = 0$', 'line 1', 'line 2'], loc = 2, fontsize=20,framealpha=0.5)
+        plt.legend([pos_rv, neg_rv, h1[0], h2[0], h3[0]], \
+                   ['pos. vec.', 'neg. vec.', '$G_1(x) = 0$', '$G_2(x) = 0$', '$G_3(x) = 0$'], loc = 2, fontsize=20,framealpha=0.5)
         plt.savefig("/home/erl/repos/sklearn-bayes/figs/rvm_model_lines.pdf", bbox_inches='tight', pad_inches=0)
     else:
         plt.legend(fontsize=20, loc=2)
+
+
+
+plt.figure(figsize = (12,8))
+levels = np.arange(0,1, 0.0005)
+#ax.contour3D(X1,X2,np.reshape(model,(n_grid,n_grid)), 100, cmap='coolwarm',
+#                   linewidth=0, antialiased=False)
+#model[model < threshold_prob] = threshold_prob
+svrv = rvm.relevant_vectors_[0]
+point_label = "relevant vecs"
+
+plt.contourf(X1, X2, np.reshape(rv_grid, (n_grid, n_grid)), 20, cmap='coolwarm')
+cb = plt.colorbar(ticks=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+# cb  = plt.colorbar()
+cb.ax.tick_params(labelsize=20)
+#arr1 = plt.arrow(0, 0, 3.5, 6.5, head_width=0.5,
+#                 head_length=0.3, fc="xkcd:green", ec="xkcd:green", width=0.2, label="colliding segment")
+#arr2 = plt.arrow(0, 0, 3.5, -0.8, head_width=0.5,
+#                 head_length=0.3, fc="xkcd:orange", ec="xkcd:orange", width=0.2, label="free segment")
+#cs2 = plt.contour(X1, X2, np.reshape(upper_grid, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+#                  linestyles="solid", label="$G_2(x)$", linewidths=line_width)
+# plt.contour(X1, X2, np.reshape(upper_grid2, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r", linestyles = "dotted", label="$G_2(x)$", linewidths=line_width)
+cs2 = plt.contour(X1, X2, np.reshape(upper_grid3, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+            linestyles="dotted")
+cs3 = plt.contour(X1, X2, np.reshape(upper_grid4, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+                  linestyles="dashdot", label="$G_3(x)$", linewidths=line_width)
+cs4 = plt.contour(X1, X2, np.reshape(upper_grid5, (n_grid, n_grid)), levels=[0.0], cmap="Greys_r",
+                  linestyles="dashed", label="$G_3(x)$", linewidths=line_width)
+cs1 = plt.contour(X1, X2, np.reshape(model, (n_grid, n_grid)), levels=[threshold_prob], linestyles="solid",
+                  cmap="Greys_r", label="$G_1(x)$", linewidths=line_width)
+pos_rv = plt.scatter(svrv[rvm.corrected_weights > 0, 0], svrv[rvm.corrected_weights > 0, 1], color='r', s=60)
+neg_rv = plt.scatter(svrv[rvm.corrected_weights < 0, 0], svrv[rvm.corrected_weights < 0, 1], color='b', s=60)
+plt.xticks(fontsize=20)
+plt.yticks(fontsize=20)
+#plt.xlabel("x1", fontsize=20)
+#plt.ylabel("x2", fontsize=20)
+plt.xlim(min_x[0],max_x[0])
+#plt.ylim(min_x[1]+4,max_x[1]-2)
+plt.ylim(min_x[1],max_x[1])
+plt.legend(fontsize=20)
+h1, _ = cs1.legend_elements()
+h2, _ = cs2.legend_elements()
+h3, _ = cs3.legend_elements()
+h4, _ = cs4.legend_elements()
+plt.legend([pos_rv, neg_rv, h1[0], h2[0], h3[0],h4[0]], \
+           ['pos. vec.', 'neg. vec.','$G_1(x) = 0,$ true boundary', '$G_3(x) = 0, n_1 = 5, n_2 = 1$', '$G_3(x) = 0, n_1 = 1, n_2 = 1$', '$G_3(x) = 0, n_1 = 1, n_2 = 1.5$'], loc=2,
+           fontsize=15, framealpha=1)
+plt.savefig("/home/erl/repos/sklearn-bayes/figs/rvm_bounds_n1n2.pdf", bbox_inches='tight', pad_inches=0)
 plt.show()

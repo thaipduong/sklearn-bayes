@@ -51,8 +51,8 @@ import pickle
 # Parameters
 n = 1000
 test_proportion = 0.1
-RUN = 7
-filename = "laser_samples_seq_25pos50negres_inflated"
+RUN = 22
+filename = "laser_samples_seq_25pos50negres"
 # create dataset & split into train/test parts
 #Xx,Yy   = make_circles(n_samples = n, noise = 0.2, random_state = 1)
 
@@ -72,7 +72,11 @@ fig = plt.figure(figsize=(12,12))
 fig2 = plt.figure(figsize=(12,12))
 ax = fig2.add_subplot(111)
 ax2 = fig.add_subplot(111)
-for d in range(0,len(label_seq), 20):#[0, 10]: #len(label_seq)):
+d = 0
+while (d  < len(label_seq)):#[0, 10]: #len(label_seq)):
+    if d % 40 != 0 and d < len(label_seq) - 1 :
+        d = d + 1
+        continue
     ax.clear()
     ax2.clear()
     #ax2.set_xlim(-10, 27)
@@ -144,7 +148,8 @@ for d in range(0,len(label_seq), 20):#[0, 10]: #len(label_seq)):
     #fig.savefig("/home/erl/repos/sklearn-bayes/figs/data_rvs"+str(d)+".png", bbox_inches='tight', pad_inches=0)
     #fig2.savefig("/home/erl/repos/sklearn-bayes/figs/rvs"+str(d)+".png", bbox_inches='tight', pad_inches=0)
     print("######################################")
-
+    print("d = ", d)
+    d = d + 1
 plt.show()
 
 # Saved trained model

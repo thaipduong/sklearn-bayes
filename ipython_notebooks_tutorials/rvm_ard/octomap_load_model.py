@@ -40,7 +40,7 @@ plt.contourf(bin_map_extended-gtmap, cmap="Greys")
 
 
 print("#################################################################################")
-drift_allowance = 2
+drift_allowance = 1
 error, total = load_gt_rosbag.compare(gtmap, bin_map_extended, drift_allowance = drift_allowance, excluded = gtinterior)
 tpr_error, count_true = load_gt_rosbag.compare_tpr(gtmap, bin_map_extended, drift_allowance = drift_allowance)
 print(error, total, n_grid_y*n_grid_x, count_true, tpr_error)

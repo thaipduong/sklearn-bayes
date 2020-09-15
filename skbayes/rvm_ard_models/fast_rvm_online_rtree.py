@@ -749,11 +749,11 @@ class RVC4(ClassificationARD4):
             Xdiff_pos = Xdiff[ydiff > 0, :]
             pos_portion = sum(ydiff[ydiff > 0])
             neg_portion = len(ydiff) - pos_portion
-            #if (pos_portion > 0):
-            #    r = max(int(neg_portion / pos_portion), 0)
-            #    for i in range(r):
-            #        Xdiff = np.vstack((Xdiff, Xdiff_pos))
-            #        ydiff = np.hstack((ydiff, ydiff_pos))
+            if (pos_portion > 0):
+                r = max(int(neg_portion / pos_portion), 0)
+                for i in range(r):
+                    Xdiff = np.vstack((Xdiff, Xdiff_pos))
+                    ydiff = np.hstack((ydiff, ydiff_pos))
             X = np.vstack((local_rv, Xdiff))
             y = np.hstack((local_rv_label, ydiff))
             #X = np.vstack((self.relevant_vectors_[0], X_orig))
@@ -839,6 +839,108 @@ class RVC4(ClassificationARD4):
         self.Mn = Mn
         self.Sn = Sn
         return self.all_rv_X, all_rv_y, all_rv_A
+
+    def _posterior_dist_final_approx(self, X, y, A, keep_prev_mean = True, tol_mul = 1.0, global_laplace = False):
+        '''
+        Uses Laplace approximation for calculating posterior distribution
+        '''
+        f_full = lambda w: _gaussian_cost_grad(X, y, w, A)
+        f = lambda w: _gaussian_cost(X, y, w, A)
+        f_grad = lambda w: _gaussian_grad(X, y, w, A)
+        f_hess = lambda  w: _gaussian_hess(X, y, w, A)
+
+        #if self.prev_trained:
+        #    w_init[0:self.prev_rvcount] = self.prev_mu
+        #    if len(self.prev_mu) != self.prev_rvcount:
+        #        print(len(self.prev_mu), self.prev_rvcount)
+        # print w_init.shape
+        # print X.shape
+        ##print y.shape
+        # print A.shape
+        posterior_approx_start = time.time()
+        attempts = 1
+        if global_laplace:
+            attempts = 10
+        a = -2
+        b = 2
+        for i in range(attempts):
+            w_init = a + np.random.random(X.shape[1])*(b-a)
+            Mn = fmin_l_bfgs_b(f_full, x0=w_init, pgtol=tol_mul * self.tol_solver,
+                               maxiter=int(self.n_iter_solver / tol_mul))[0]
+            check_sign = [0 if Mn[j]*(y[j] - 0.5) >= 0 else 1 for j in range(len(Mn))]
+            if sum(check_sign)/len(Mn) < 0.1:
+                if global_laplace:
+                    print("Succeeded to recover posterior distribution!", i)
+                break
+            else:
+                if global_laplace:
+                    print("Failed to recover posterior distribution! Try again!", i)
+        #bb = f(w_init)
+        #aa = f_grad(w_init)
+        #cc = f_full(w_init)
+        #dd = f_hess(w_init)
+        #opts = {'xtol': self.tol_solver, 'maxiter': self.n_iter_solver}
+        #Mn = minimize(f, x0=w_init,  method="Newton-CG", jac=f_grad, hess=f_hess, options=opts)
+        #Mn = Mn.x
+        #if self.prev_trained and keep_prev_mean:
+        #    Mn[0:self.prev_rvcount] = self.prev_mu
+        #end_gd_time = time.time()
+        #print("gradient descent time: ", end_gd_time - posterior_approx_start)
+        #Xm = np.dot(X, Mn) + self.fixed_intercept
+        #s = norm.cdf(Xm)
+        t = (y - 0.5) * 2
+        #Xm_t_time = time.time()
+        #print("Xm, t time: ", Xm_t_time - end_gd_time)
+        #eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-300
+        # B         = logistic._pdf(Xm) # avoids underflow
+        #eta_time = time.time()
+        #print("eta time: ", eta_time - Xm_t_time)
+        #S = np.matmul(X.T * eta * (Xm + eta), X) + np.diag(A)
+        #S_time = time.time()
+        #print("S time: ", S_time - eta_time)
+
+        sparseS_time0 = time.time()
+        #X = np.round(X, decimals = 2)
+        #X[X < 0.01] = 0.0
+        for i in range(len(X)):
+            sortedXi = np.unique(X[i,:])
+            print("3rd largest val ", sortedXi[-3])
+            X[i,X[i,:] < max(sortedXi[-6], 0.01)] = 0.0
+        print("Non-zeros entries of X = ", np.sum(X > 0))
+        Xm = np.dot(X, Mn) + self.fixed_intercept
+        eta = norm.pdf(t * Xm) * t / norm.cdf(Xm * t) + 1e-10
+        #print("eta time: ", eta_time - Xm_t_time)
+        sparse_S = np.matmul(X.T * eta * (Xm + eta), X) + np.diag(A)
+        print("Size of Sigma = ", sparse_S.shape)
+        print("Non-zeros entries = ", np.sum(sparse_S > 0))
+        #sparse_S_time1 = time.time()
+        #print("sparseS time: ", sparse_S_time1 - sparseS_time0)
+        sparse_eigs, _ = scipy.sparse.linalg.eigsh(sparse_S, k= 1, sigma=0, which='LM')#which = 'SM')
+        #sparse_eig_time = time.time()
+        #print("sparse eigs time: ", sparse_eig_time - sparse_S_time1)
+        #print("S diff: ", np.max(np.abs(S - sparse_S).flatten()))
+        #S_eigs_time0 = time.time()
+        #eigs, _ = scipy.linalg.eig(S)
+        #S_eigs_time1 = time.time()
+        #print("S eigs time: ", S_eigs_time1 - S_eigs_time0)
+        print("compare min eigs", np.min(sparse_eigs.real))
+        #print("compare max eigs", np.max(sparse_eigs.real), np.max(eigs.real))
+        #print("compare len eigs:", len(sparse_eigs), len(eigs))
+
+        #np.fill_diagonal(S, np.diag(S) + A)
+        #cholesky = True
+        #cholesky_time_s = time.time()
+        # try using Cholesky , if it fails then fall back on pinvh
+        #try:
+        #    R = np.linalg.cholesky(S)
+        #    Sn = solve_triangular(R, np.eye(A.shape[0]),
+        #                          check_finite=False, lower=True)
+        #except LinAlgError:
+        #    Sn = pinvh(S)
+        #    cholesky = False
+        #cholesky_time_e = time.time()
+        #print("Cholesky time:", cholesky_time_e - cholesky_time_s)
+        return [Mn, 1/np.min(sparse_eigs.real)]
 
     def _decision_function_active(self,X,coef_,intercept_):
         ''' Constructs decision function using only relevant features '''
@@ -942,6 +1044,21 @@ class RVC4(ClassificationARD4):
            Estimated probabilities of target classes
         '''
         decision, var = self.decision_function(X)
+        #print("Decision value!!!!!!!!!!!!!!!", decision)
+        #print("Var value!!!!!!!!!!!!!!!", var)
+        prob = norm.cdf(decision / np.sqrt(var + 1))
+        if prob.ndim == 1:
+            prob = np.vstack([1 - prob, prob]).T
+        prob = prob / np.reshape(np.sum(prob, axis=1), (prob.shape[0], 1))
+        return prob, var, decision,  np.sqrt(var + 1)
+
+    def predict_proba_rvs_userdefined(self, X, all_rv_X, Mn, Sn, intercept):
+        K = get_kernel(X, all_rv_X, self.gamma, self.degree,
+                                        self.coef0, self.kernel, self.kernel_params)
+        K2 = get_kernel(all_rv_X, all_rv_X, self.gamma, self.degree,
+                       self.coef0, self.kernel, self.kernel_params)
+        decision = safe_sparse_dot(K,Mn) + intercept
+        var = np.sum(np.matmul(K, Sn) * K, axis=1)
         #print("Decision value!!!!!!!!!!!!!!!", decision)
         #print("Var value!!!!!!!!!!!!!!!", var)
         prob = norm.cdf(decision / np.sqrt(var + 1))

@@ -71,7 +71,7 @@ rvm = RVC4(n_iter = 100, kernel = 'rbf', gamma =1.0)
 fig = plt.figure(figsize=(12,12))
 ax = fig.add_subplot(211)
 ax2 = fig.add_subplot(212)
-for d in range(0,len(label_seq), 10):#[0, 10]: #len(label_seq)):
+for d in range(0,5, 10):#[0, 10]: #len(label_seq)):
     ax.clear()
     ax2.clear()
     ax2.set_xlim(-10, 27)

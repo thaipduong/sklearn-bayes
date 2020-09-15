@@ -40,7 +40,7 @@ gtmap = load_gt_rosbag.get_goundtruth_map()
 gtinterior = load_gt_rosbag.get_interior(gtmap)
 ###################################################################################################
 
-BUILDMAP = False
+BUILDMAP = True
 res = 0.25
 if BUILDMAP:
 	support_vecs = np.load("/home/erl/repos/sklearn-bayes/data/results/fastronmap/support_vecs.npy")
@@ -92,7 +92,7 @@ ax.xaxis.set_tick_params(labelsize=12)
 ax.yaxis.set_tick_params(labelsize=12)
 
 print("#################################################################################")
-drift_allowance = 2
+drift_allowance = 1
 error, total = load_gt_rosbag.compare(gtmap, bin_map, drift_allowance = drift_allowance, excluded = None)
 tpr_error, count_true = load_gt_rosbag.compare_tpr(gtmap, bin_map, drift_allowance = drift_allowance)
 print(error, total, n_grid_y*n_grid_x, count_true, tpr_error)

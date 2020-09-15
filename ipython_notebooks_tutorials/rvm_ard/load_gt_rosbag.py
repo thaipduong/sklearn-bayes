@@ -113,10 +113,10 @@ def remove_interior(ground_truth):
 
 def get_interior(ground_truth):
     interior = np.zeros(ground_truth.shape)
-    interior[5:8, 57:67] = 1
-    interior[5:12, 107:117] = 1
-    interior[5:12, 188:198] = 1
-    interior[5:12, 226:231] = 1
+    interior[4:8, 57:67] = 1
+    interior[4:12, 107:117] = 1
+    interior[4:12, 188:198] = 1
+    interior[4:13, 226:231] = 1
 
     interior[29:38, 57:67] = 1
     interior[33:38, 57:122] = 1
@@ -132,10 +132,10 @@ def get_interior(ground_truth):
     interior[48:51, 226:242] = 1
 
     interior[61:66, 57:121] = 1
-    interior[67:78, 104:107] = 1
+    interior[66:78, 104:107] = 1
 
     interior[61:66, 141:177] = 1
-    interior[67:78, 152:159] = 1
+    interior[66:78, 152:159] = 1
 
     interior[61:66, 197:205] = 1
     interior[67:78, 207:210] = 1
@@ -149,6 +149,7 @@ def get_interior(ground_truth):
     interior[78:89, 185:188] = 1
     interior[78:89, 126:133] = 1
     interior[78:89, 82:85] = 1
+    interior[89,229:233] = 1
 
     interior[90:95, 56:64] = 1
     interior[90:95, 85:92] = 1

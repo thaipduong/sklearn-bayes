@@ -21,8 +21,8 @@ import warnings
 import time
 
 INTERCEPT = False
-THRESHOLD = -0.01
-UNKNOWN_PROB = -0.05
+THRESHOLD = -0.01#-0.01#0.3#-0.01
+UNKNOWN_PROB = -0.05#-0.05
 #TODO: predict_proba for RVC with Laplace Approximation
 
 
@@ -1201,23 +1201,61 @@ class RVC2(ClassificationARD2):
         #temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
         #upperbound = np.matmul(K, w)
         #upperbound = upperbound + self.intercept_
-        w2 = w - c*lambda_max_sqrt
+        w2 = w - c*lambda_max_sqrt if c < 0 else w
         upperbound = np.matmul(K,w2)
-        upperbound = upperbound + self.intercept_ - c
+        upperbound = upperbound + self.fixed_intercept - c
         self.corrected_weights = w2
         self.orig_weights = w
-        upperbound2, pos_term, neg_term, _, _, _ = self.collision_checking(K, mu, w2, X)
+        upperbound2, pos_term, neg_term, neg_coeff, _, _ = self.collision_checking(K, mu, w2, X)
         upperbound2 = upperbound2.flatten()
-        upperbound2 = upperbound2 + self.intercept_ - c
-        upperbound4 = pos_term - 2*np.sqrt(neg_term*(self.intercept_ - c))
+        upperbound2 = upperbound2 + self.fixed_intercept - c
+        upperbound4 = pos_term - 2*np.sqrt(neg_term*(self.fixed_intercept - c))
         #n = np.max(1, (self.intercept_ - c)/neg_term) + 1
-        n = np.array([1 if n_i < 1 else n_i for n_i in (self.intercept_ - c)/neg_term]) + 1
-        n = 1e189*np.ones(len(upperbound))
-        temp = (c - self.intercept_)/(n-1)
-        upperbound3 = pos_term[:,0] - n*np.power(-neg_term[:,0], 1/n)*np.power(temp, (n-1)/n)
-        return upperbound, upperbound2, upperbound3, upperbound4
+        if c - self.fixed_intercept == 0:
+            m = 1
+            n = 1
+        else:
+            if min(-neg_term) > c - self.fixed_intercept:
+                n = 1#np.array([1 if n_i < 1 else n_i for n_i in (self.fixed_intercept - c)/neg_term]) + 1
+                m = int(min(-neg_term)/(c - self.fixed_intercept))
+            else:
+                m = 1
+                n = int((c - self.fixed_intercept)/min(-neg_term))
+        m = 1.0
+        n = 5.0
+        print("m = ", m, "n = ", n)
+        #n = 1e189*np.ones(len(upperbound))
+        temp = (c - self.fixed_intercept)/(n)
+        upperbound3 = pos_term[:,0] - (n+m)*np.power(-neg_term[:,0]/m, m/(n+m))*np.power(temp, n/(n+m))
+        m = 1.5
+        n = 1
+        print("m = ", m, "n = ", n)
+        # n = 1e189*np.ones(len(upperbound))
+        temp = (c - self.fixed_intercept) / (n)
+        upperbound5 = pos_term[:, 0] - (n + m) * np.power(-neg_term[:, 0] / m, m / (n + m)) * np.power(temp,
+                                                                                                       n / (n + m))
+        return upperbound, upperbound2, upperbound3, upperbound4, upperbound5
 
     def predict_upperbound_line(self, X, A, c=THRESHOLD):
+        K, w, mu = self.get_feature(X)
+        S = self.sigma_[0]
+        # trace = np.trace(S)
+        # sum_col = np.sum(S,axis=1)
+        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
+        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
+        # temp1 = norm.cdf(-0.1)
+        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
+        # upperbound = np.matmul(K, w)
+        # upperbound = upperbound + self.intercept_
+        w2 = w - c * lambda_max_sqrt if c < 0 else w
+        _, pos_term, neg_term, neg_coff, neg_dist, _ = self.collision_checking(K, mu, w2, X)
+        A = A.reshape([1,2])
+        dist_to_A = get_kernel( X, A, self.gamma, self.degree, self.coef0,
+                       self.kernel, self.kernel_params)
+        upperbound5 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
+        return upperbound5
+
+    def predict_upperbound_line_check(self, X, A, B, e=THRESHOLD, n1 = 100.0, n2 = 1.0):
         K, w, mu = self.get_feature(X)
         S = np.abs(self.sigma_[0])
         # trace = np.trace(S)
@@ -1228,13 +1266,11 @@ class RVC2(ClassificationARD2):
         # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
         # upperbound = np.matmul(K, w)
         # upperbound = upperbound + self.intercept_
-        w2 = w - c * lambda_max_sqrt
-        _, pos_term, neg_term, neg_coff, neg_dist, _ = self.collision_checking(K, mu, w2, X)
-        A = A.reshape([1,2])
-        dist_to_A = get_kernel( X, A, self.gamma, self.degree, self.coef0,
-                       self.kernel, self.kernel_params)
-        upperbound5 = pos_term - 2 * np.sqrt(neg_coff * (c - self.intercept_))*dist_to_A*neg_dist[0]
-        return upperbound5
+        w2 = w - e * lambda_max_sqrt if e < 0 else w
+        v = B - A
+        intersection = self.check_line(A, w2, v, e=e, n1 = n1, n2 = n2)
+        return intersection
+
     '''
     def predict_upperbound_line_cs(self, X, A, c=-0.1):
         K, w, mu = self.get_feature(X)
@@ -1292,6 +1328,108 @@ class RVC2(ClassificationARD2):
             neg_dist[i][0] = f_predict_minus[i][0]
             neg_min_idx[i][0] = minus_idx_min
         return f_predict_upperbound, f_predict_upperbound_pos , f_predict_upperbound_neg, neg_coff, neg_dist, neg_min_idx
+
+    def check_line(self, s0, alpha, v, e=THRESHOLD, n = 1, tighter_bound = True, n1 = 100.0, n2 = 1.0):
+        # n1 = 100.0
+        # n2 = 1.0
+        total_plus = np.sum(alpha[alpha > 0])
+        rvs = self.relevant_vectors_[0]
+        tau = None
+        for j in range(len(alpha)):
+            if alpha[j] < 0:
+                continue
+            if tighter_bound:
+                temp_max = -1
+                for k in range(len(alpha)):
+                    if alpha[k] > 0:
+                        continue
+                    beta = np.log(n1+n2) + (n1/(n1+n2))*np.log((e - self.intercept_[0])/n1) + np.log(-alpha[k]/n2)*n2/(n1+n2) -np.log(total_plus)
+                    # Quadratic conditions
+                    a = -n1*(v[0]**2 + v[1]**2)*self.gamma
+                    temp1 = n1*s0 + n2*rvs[k,:] - (n1+n2)*rvs[j,:]
+                    b = -2*np.dot(v,temp1)*self.gamma
+                    temp = s0 - rvs[j,:]
+                    temp2 = np.linalg.norm(temp)**2
+                    c = (-(n1+n2)*(np.linalg.norm(s0 - rvs[j,:])**2) + n2*(np.linalg.norm(s0 - rvs[k,:])**2))*self.gamma - (n1+n2)*beta
+                    delta = b**2 - 4*a*c
+                    if delta <= 0:
+                        t1 = 100000
+                    else:
+                        t1 = (-b + np.sqrt(delta))/(2*a)
+                        t2 = (-b - np.sqrt(delta)) / (2 * a)
+
+                    if t1 >= 0:
+                        if t1 > temp_max:
+                            temp_max = t1
+                    elif t2 < 0:
+                        temp_max = 100000
+                if temp_max < 0:
+                    tau = -1
+                    break
+                elif tau is None or temp_max < tau:
+                    tau = temp_max
+            print(tau)
+        return tau
+
+    def get_radius(self, X, A, e=THRESHOLD, n1 = 5.0, n2 = 1.0):
+        K, w, mu = self.get_feature(X)
+        S = self.sigma_[0]
+        # trace = np.trace(S)
+        # sum_col = np.sum(S,axis=1)
+        # lambda_max_sqrt = np.sqrt(np.max(sum_col))
+        lambda_max_sqrt = np.sqrt(LA.norm(S, ord=2))
+        # temp1 = norm.cdf(-0.1)
+        # temp2 = 0.5*(1 + erf(-0.1/np.sqrt(2)))
+        # upperbound = np.matmul(K, w)
+        # upperbound = upperbound + self.intercept_
+        w2 = w - e * lambda_max_sqrt if e < 0 else w
+        print(A)
+        print(A.shape)
+        radius = self.check_radius(A, w2, e=e, n1 = n1, n2 = n2)
+        return radius
+
+    def check_radius(self, s0, alpha, e=THRESHOLD, tighter_bound = True, n1 = 5.0, n2 = 1.0):
+        # n1 = 5.0
+        # n2 = 1.0
+        total_plus = np.sum(alpha[alpha > 0])
+        rvs = self.relevant_vectors_[0]
+        tau = None
+        for j in range(len(alpha)):
+            if alpha[j] < 0:
+                continue
+            if tighter_bound:
+                temp_max = -1
+                for k in range(len(alpha)):
+                    if alpha[k] > 0:
+                        continue
+                    beta = np.log(n1 + n2) + (n1 / (n1 + n2)) * np.log((e - self.intercept_[0]) / n1) + np.log(
+                        -alpha[k]) * n2 / (n1 + n2) - np.log(total_plus)
+                    # Quadratic conditions
+                    a = -n1
+                    temp1 = n1*s0 + n2*rvs[k] - (n1+n2)*rvs[j]
+
+                    b = 2*np.linalg.norm(temp1)*np.sqrt(self.gamma)
+                    temp = s0 - rvs[j]
+                    temp2 = np.linalg.norm(temp)**2
+                    c = (-(n1+n2)*(np.linalg.norm(s0 - rvs[j])**2) + n2*np.linalg.norm(s0 - rvs[k])**2)*self.gamma - (n1+n2)*beta
+                    delta = b**2 - 4*a*c
+                    if delta <= 0:
+                        t1 = 100000
+                    else:
+                        t1 = (-b + np.sqrt(delta))/(2*a)
+                        t2 = (-b - np.sqrt(delta)) / (2 * a)
+
+                    if t1 >= 0:
+                        if t1 > temp_max:
+                            temp_max = t1
+                    elif t2 < 0:
+                        temp_max = 100000
+                if temp_max < 0:
+                    tau = -1
+                    break
+                elif tau is None or temp_max < tau:
+                    tau = temp_max
+        return tau/np.sqrt(self.gamma)
 
 
 
